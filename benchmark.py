@@ -20,9 +20,6 @@ Dùng từ dòng lệnh
 from __future__ import annotations
 
 import argparse
-import json
-import subprocess
-import tempfile
 import time
 from dataclasses import dataclass, field
 from pathlib import Path
