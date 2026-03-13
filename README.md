@@ -247,6 +247,26 @@ print(f"Giá trị mục tiêu:\n{pareto_front}")
    Evolutionary Computation, 8(2), 173-195.  
    Link: https://doi.org/10.1162/106365600568202
 
+5. **Deb, K., Thiele, L., Laumanns, M., & Zitzler, E. (2005)**  
+   _"Scalable test problems for evolutionary multiobjective optimization"_  
+   Evolutionary Multiobjective Optimization, 105-145.  
+   Link: https://doi.org/10.1007/1-84628-137-7_6
+
+6. **Zitzler, E., Knowles, J., & Thiele, L. (2008)**  
+   _"Quality assessment of Pareto set approximations"_  
+   Multiobjective Optimization, 373-404.  
+   Link: https://doi.org/10.1007/978-3-540-88908-3_14
+
+7. **Ishibuchi, H., Masuda, H., Tanigaki, Y., & Nojima, Y. (2015)**  
+   _"Modified distance calculation in generational distance and inverted generational distance"_  
+   EMO 2015, Part I, LNCS 9018, 110-125.  
+   Link: https://doi.org/10.1007/978-3-319-15892-1_8
+
+8. **Blank, J., & Deb, K. (2020)**  
+   _"pymoo: Multi-objective optimization in Python"_  
+   IEEE Access, 8, 89497-89509.  
+   Link: https://ieeexplore.ieee.org/abstract/document/9078759/
+
 ## License
 
 MIT License - Tự do sử dụng cho mục đích nghiên cứu và thương mại.
