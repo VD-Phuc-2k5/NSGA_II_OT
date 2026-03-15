@@ -1,282 +1,273 @@
-# Improved NSGA-II
+# Doctor Scheduling Optimization System
 
-An improved implementation of NSGA-II (Non-dominated Sorting Genetic Algorithm II) with modern optimization techniques for solving multi-objective optimization problems.
+A full-stack web application for doctor scheduling using NSGA-II (Non-dominated Sorting Genetic Algorithm II) optimization.
 
-> Vietnamese translation: see [README.vi.md](README.vi.md).
+## 🏗️ Architecture
 
-## Table of Contents
+**Backend**: FastAPI (Python) with NSGA-II optimization
+**Frontend**: Next.js 16 (React + TypeScript)
+**Database**: In-memory state management
+**Algorithm**: Improved NSGA-II for multi-objective optimization
 
-- [Overview](#overview)
-- [Key Improvements](#key-improvements)
-- [Experimental Results](#experimental-results)
-- [Algorithm Complexity](#algorithm-complexity)
-- [Installation](#installation)
-- [Usage](#usage)
-- [References](#references)
+## ✨ Features
 
-## Overview
+### 1. **Setup** (`/setup`)
 
-Improved NSGA-II is an enhanced version of the classic NSGA-II algorithm, designed to improve:
+- Configure 6 constraint groups (A-F)
+- Set optimization weights for fairness metrics
+- Define hospital tier requirements and shift staffing rules
 
-- **Solution quality**: Better convergence toward the true Pareto front
-- **Diversity**: More uniform distribution of solutions on the Pareto front
-- **Performance**: Faster convergence with fewer generations
-- **Exploration ability**: Reduced risk of getting trapped in local optima
+### 2. **Doctors** (`/doctors`)
 
-## Key Improvements
+- Manual doctor entry with experience levels and specialties
+- Excel/CSV bulk import
+- Availability matrix preview
+- Track seniority scores and special circumstances
 
-### 1. Opposition-Based Learning (OBL)
+### 3. **Scheduling** (`/schedule/[month]`)
 
-- **Purpose**: Improve initial population quality
-- **Method**: For each random individual `x`, generate an opposite individual `x_opp = lb + ub - x`
-- **Benefit**: Increases search-space exploration from the start and reduces required generations to converge
+- Real-time NSGA-II optimization via Server-Sent Events (SSE)
+- Pareto front visualization (scatter plot of objectives)
+- Click to select optimal solutions
+- Drag-drop schedule adjustments with constraint validation
+- Live shift count visualization
 
-### 2. Adaptive Mutation Probability
+### 4. **Reports** (`/reports`)
 
-- **Formula**: `pm(t) = pm_max - (pm_max - pm_min) × (t / T)`
-- **pm_max**: 0.3 (early generations - stronger exploration)
-- **pm_min**: 0.05 (late generations - stronger exploitation)
-- **Benefit**: Balances exploration and exploitation over time
+- Doctor fairness statistics (shifts, hours, night shifts, holidays)
+- Bar chart visualizations
+- Export to PDF or Excel
 
-### 3. Simulated Binary Crossover (SBX)
+## 🚀 Quick Start
 
-- **Parameter**: `eta_c = 20` (distribution index)
-- **Characteristic**: Offspring tend to stay close to parents, suitable for continuous optimization
-- **Benefit**: Produces high-quality variants from good solutions
+### Prerequisites
 
-### 4. Polynomial Mutation
+- Python 3.12+ (✅ Already installed)
+- Node.js 20+ (✅ Already installed)
+- Virtual environment active: `source_code\venv\`
 
-- **Parameter**: `eta_m = 20` (distribution index)
-- **Characteristic**: Mutation magnitude gradually decreases near optimal solutions
-- **Benefit**: Effective fine-tuning in later stages
+### Installation (Already Done ✅)
 
-### 5. Tournament Selection
-
-- **Tournament size**: 2
-- **Criterion**: Prefer lower rank, then larger crowding distance
-- **Benefit**: Maintains moderate selection pressure while preserving diversity
-
-## Experimental Results
-
-### Comparison with Other Algorithms
-
-Improved NSGA-II is compared with the following advanced algorithms:
-
-- **NSGA-II**: Original baseline version (Deb et al., 2002)
-- **RNSGA-II**: Reference-point based NSGA-II
-- **DNSGA-II**: Dynamic NSGA-II
-- **MOPSO-CD**: Multi-Objective Particle Swarm Optimization with Crowding Distance
-
-### Results on the ZDT Benchmark Suite
-
-| Problem   | Rating                      | Details                                                       |
-| --------- | --------------------------- | ------------------------------------------------------------- |
-| **ZDT1**  | ⭐⭐⭐⭐⭐ **Best overall**    | Low IGD, high HV, fast and stable convergence                |
-| **ZDT2**  | ⭐⭐⭐⭐⭐ **Best overall**    | Strong balance between convergence quality and diversity      |
-| **ZDT3**  | ⭐⭐⭐⭐ **Best HV**          | Outstanding Pareto-front coverage in terms of hypervolume    |
-| **ZDT4**  | ⭐⭐⭐⭐⭐ **Best overall**    | High effectiveness on many-local-optima landscapes           |
-| **ZDT6**  | ⭐⭐⭐⭐⭐ **Best overall**    | Handles uneven Pareto fronts and nonlinear search spaces well |
-
-### Evaluation Metrics
-
-- **IGD (Inverted Generational Distance)**: Average distance from the true Pareto front to the approximated set
-  - _Lower is better_
-  - Improved NSGA-II gives the strongest results on ZDT1, ZDT2, ZDT4, and ZDT6
-
-- **HV (Hypervolume)**: Volume of objective space dominated by the solution set
-  - _Higher is better_
-  - Improved NSGA-II achieves strong HV across the full ZDT suite, and is best on ZDT3
-
-- **Stability**: Standard deviation across multiple runs
-  - ZDT1, ZDT2, ZDT4, ZDT6: Most stable with best overall results
-  - ZDT3: Particularly strong in HV
-
-### Main Strengths
-
-- [x] **High solution quality**: Best results on ZDT1, ZDT2, ZDT4, and ZDT6
-- [x] **Excellent coverage**: Very high HV, especially on ZDT3
-- [x] **Strong exploration**: Performs well on ZDT4 (many local optima)
-- [x] **Adaptivity**: OBL and adaptive mutation accelerate convergence
-- [x] **Diversity preservation**: Maintains good spread on complex Pareto fronts
-
-## Algorithm Complexity
-
-### Time Complexity
-
-Given population size $N$ and number of objectives $M$:
-
-| Component              | Complexity              | Explanation                                      |
-| ---------------------- | ----------------------- | ------------------------------------------------ |
-| **OBL Initialization** | $O(N \cdot n_{var})$    | Generate $N$ individuals and $N$ opposite ones   |
-| **Non-dominated Sort** | $O(M \cdot N^2)$        | Fast Non-dominated Sort algorithm (Deb)          |
-| **Crowding Distance**  | $O(M \cdot N \log N)$  | Sort by each objective                           |
-| **Selection**          | $O(N)$                  | Tournament selection                             |
-| **Crossover**          | $O(N \cdot n_{var})$    | SBX for each parent pair                         |
-| **Mutation**           | $O(N \cdot n_{var})$    | Polynomial mutation                              |
-| **Evaluation**         | $O(N \cdot T_{eval})$   | $T_{eval}$ = evaluation time per individual      |
-
-**Total per generation**: $O(M \cdot N^2 + N \cdot n_{var} + N \cdot T_{eval})$
-
-In practice:
-
-- If $T_{eval}$ is small (simple objective functions): dominant cost is **Non-dominated Sort** $O(M \cdot N^2)$
-- If $T_{eval}$ is large (complex simulations): dominant cost is **Evaluation** $O(N \cdot T_{eval})$
-
-### Space Complexity
-
-$O(N \cdot (n_{var} + M))$
-
-- Population storage: $N$ individuals
-- Each individual: $n_{var}$ decision variables + $M$ objective values
-- Metadata: rank, crowding distance
-
-### Comparison with Original NSGA-II
-
-| Algorithm              | Time / Generation | Space          | Notes                  |
-| ---------------------- | ----------------- | -------------- | ---------------------- |
-| NSGA-II                | $O(M \cdot N^2)$  | $O(N \cdot M)$ | Baseline               |
-| **Improved NSGA-II**   | $O(M \cdot N^2)$  | $O(N \cdot M)$ | No asymptotic increase |
-
-**Conclusion**: The improvements (OBL, adaptive mutation) do not increase asymptotic complexity, only small constant overhead.
-
-## Installation
-
-### System Requirements
-
-- Python 3.8+
-- pip or conda
-
-### Install Dependencies
+**Backend dependencies**:
 
 ```bash
-# Clone repository (if available)
-git clone <repository-url>
-cd source_code
-
-# Install required dependencies
+cd backend
 pip install -r requirements.txt
 ```
 
-### Main Libraries
-
-- `numpy`: Numerical computing and arrays
-- `pandas`: Data processing and result export
-- `matplotlib`: Plotting
-- `seaborn`: Advanced visualization
-- `pymoo`: Multi-objective optimization framework (provides ZDT/DTLZ benchmark suites)
-- `tabulate`: Pretty console tables
-
-## Usage
+**Frontend dependencies**:
 
 ```bash
-# Run with population 100, 200 generations, 10 runs
-python benchmark.py --pop 100 --gen 200 --runs 10
-
-# Run with larger population and more generations
-python benchmark.py --pop 200 --gen 300 --runs 20
-
-# Run DTLZ benchmark suite (3 objectives)
-python benchmark.py --suite dtlz --pop 150 --gen 250
+cd frontend
+npm install
 ```
 
-### Command-Line Arguments
+### Running the Application
 
-| Argument  | Default | Description                                 |
-| --------- | ------- | ------------------------------------------- |
-| `--suite` | `zdt`   | Benchmark suite: `zdt` or `dtlz`            |
-| `--pop`   | `100`   | Population size                             |
-| `--gen`   | `200`   | Maximum number of generations               |
-| `--runs`  | `10`    | Number of repeated runs (for mean ± std)    |
-| `--seed`  | `42`    | Base random seed                            |
+#### Option 1: Batch Files (Windows - Easiest)
 
-### Output
+From the `source_code` directory, open **two command prompts** side-by-side:
 
-After execution, you will get:
+**Terminal 1** - Right-click and run:
 
-1. **Convergence plots**: IGD, HV over generations + 2D/3D Pareto front
-   - Displays the true Pareto front (black curve)
-   - Displays NSGA-II front (hollow red markers)
-
-2. **Boxplots**: IGD and HV distributions across all problems
-
-3. **Summary table** (console): Mean ± std for IGD, HV, and time
-
-4. **CSV files**:
-   - `benchmark_raw.csv`: Raw data for each run
-   - `benchmark_summary.csv`: Aggregated results (mean, std)
-
-### Use in Python Code
-
-```python
-from nsga2_improved import NSGA2ImprovedSmart, ProblemWrapper
-from pymoo.problems import get_problem
-import numpy as np
-
-# Define the problem
-problem = get_problem("zdt1", n_var=30)
-wrapper = ProblemWrapper(problem)
-
-# Initialize the algorithm
-solver = NSGA2ImprovedSmart(wrapper, pop_size=100, n_gen=200)
-
-# Run the algorithm
-pareto_front = solver.run()
-
-# Results
-print(f"Number of Pareto solutions: {len(pareto_front)}")
-print(f"Objective values:\n{pareto_front}")
+```bash
+start-backend.bat
 ```
 
-## References
+**Terminal 2** - Right-click and run:
 
-1. **Deb, K., et al. (2002)**  
-   _"A fast and elitist multiobjective genetic algorithm: NSGA-II"_  
-   IEEE Transactions on Evolutionary Computation, 6(2), 182-197.  
-   Link: https://doi.org/10.1109/4235.996017
+```bash
+start-frontend.bat
+```
 
-2. **Tizhoosh, H. R. (2005)**  
-   _"Opposition-based learning: A new scheme for machine intelligence"_  
-   International Conference on Computational Intelligence for Modelling, Control and Automation.  
-   Link: https://ieeexplore.ieee.org/abstract/document/1631345/
+Then open http://localhost:3000 in your browser.
 
-3. **Deb, K., & Agrawal, R. B. (1995)**  
-   _"Simulated binary crossover for continuous search space"_  
-   Complex Systems, 9(2), 115-148.  
-   Link: https://www.complex-systems.com/abstracts/v09_i02_a02/
+#### Option 2: PowerShell Script
 
-4. **Zitzler, E., et al. (2000)**  
-   _"Comparison of multiobjective evolutionary algorithms: Empirical results"_  
-   Evolutionary Computation, 8(2), 173-195.  
-   Link: https://doi.org/10.1162/106365600568202
+```powershell
+# From the source_code directory
+.\run-dev-simple.ps1
+```
 
-5. **Deb, K., Thiele, L., Laumanns, M., & Zitzler, E. (2005)**  
-   _"Scalable test problems for evolutionary multiobjective optimization"_  
-   Evolutionary Multiobjective Optimization, 105-145.  
-   Link: https://doi.org/10.1007/1-84628-137-7_6
+#### Option 3: Manual Commands
 
-6. **Zitzler, E., Knowles, J., & Thiele, L. (2008)**  
-   _"Quality assessment of Pareto set approximations"_  
-   Multiobjective Optimization, 373-404.  
-   Link: https://doi.org/10.1007/978-3-540-88908-3_14
+**Terminal 1 - Backend**:
 
-7. **Ishibuchi, H., Masuda, H., Tanigaki, Y., & Nojima, Y. (2015)**  
-   _"Modified distance calculation in generational distance and inverted generational distance"_  
-   EMO 2015, Part I, LNCS 9018, 110-125.  
-   Link: https://doi.org/10.1007/978-3-319-15892-1_8
+```powershell
+cd backend
+& ..\venv\Scripts\Activate.ps1
+$env:PYTHONPATH = ".."
+python -m uvicorn app.main:app --reload --port 8000
+```
 
-8. **Blank, J., & Deb, K. (2020)**  
-   _"pymoo: Multi-objective optimization in Python"_  
-   IEEE Access, 8, 89497-89509.  
-   Link: https://ieeexplore.ieee.org/abstract/document/9078759/
+**Terminal 2 - Frontend**:
 
-## License
+```powershell
+cd frontend
+npm run dev
+```
 
-MIT License - Free to use for research and commercial purposes.
+**Then open**: http://localhost:3000
 
-## Contact
+## 📚 API Documentation
 
-If you have questions or issues, please open an Issue on GitHub.
+Once backend is running, visit:
+
+- **Swagger UI**: http://localhost:8000/docs
+- **ReDoc**: http://localhost:8000/redoc
+
+### Key Endpoints
+
+| Method       | Endpoint                                 | Purpose                            |
+| ------------ | ---------------------------------------- | ---------------------------------- |
+| GET/PUT      | `/setup`                                 | Load/save constraint configuration |
+| GET/PUT/POST | `/doctors/{id}`                          | Manage doctor roster               |
+| POST         | `/doctors/import-excel`                  | Bulk import from Excel             |
+| POST         | `/optimize/start`                        | Start NSGA-II optimization job     |
+| GET          | `/optimize/stream/{job_id}`              | Stream optimization progress (SSE) |
+| GET          | `/schedule/{month}`                      | Get Pareto solutions for month     |
+| POST         | `/schedule/{month}/select/{solution_id}` | Select solution                    |
+| GET          | `/reports/{month}`                       | Generate fairness report           |
+| GET          | `/reports/{month}/export/excel`          | Export as Excel file               |
+| GET          | `/reports/{month}/export/pdf`            | Export as PDF file                 |
+
+## 📂 Project Structure
+
+```
+source_code/
+├── backend/
+│   ├── app/
+│   │   ├── main.py                 # FastAPI app setup
+│   │   ├── state.py               # Global application state
+│   │   ├── api/
+│   │   │   └── routes.py          # All 14 REST endpoints
+│   │   ├── schemas/
+│   │   │   └── models.py          # Pydantic data models
+│   │   └── services/
+│   │       └── scheduler.py       # NSGA-II integration
+│   └── requirements.txt
+├── frontend/
+│   ├── app/
+│   │   ├── page.tsx               # Home page
+│   │   ├── setup/page.tsx         # Constraint configuration
+│   │   ├── doctors/page.tsx       # Doctor management
+│   │   ├── schedule/[month]/page.tsx  # Optimization & selection
+│   │   ├── reports/page.tsx       # Fairness statistics
+│   │   ├── layout.tsx             # Root layout
+│   │   └── globals.css            # Global styles
+│   ├── lib/
+│   │   ├── api.ts                 # API client
+│   │   └── types.ts               # TypeScript interfaces
+│   ├── components/
+│   │   └── nav.tsx                # Navigation bar
+│   └── package.json
+├── nsga2_improved/                 # Original NSGA-II library
+├── venv/                           # Python virtual environment ✅
+└── run-dev.ps1                     # Development launcher script
+```
+
+## 🔄 Workflow
+
+1. **Setup**: Define constraints and optimization weights
+2. **Doctors**: Add doctors and their availability
+3. **Optimize**: Run NSGA-II to generate Pareto-optimal solutions
+4. **Schedule**: Select best solution and make manual adjustments
+5. **Reports**: View fairness metrics and export results
+
+### Quick Test Workflow
+
+Want to test quickly? Here's the fastest way:
+
+1. ✅ Go to **Setup** page → Click "Lưu cấu hình" (save config) with defaults
+2. 📋 Go to **Doctors** page → Import sample CSV:
+   - Open [doctors-sample.csv](doctors-sample.csv)
+   - Copy all content
+   - Paste into "Import CSV" textarea
+   - Click "Import từ CSV"
+3. ⚙️ Go to **Schedule** page:
+   - Set Population = 50, Generations = 30
+   - Click "Tối ưu hóa"
+   - Wait ~10 seconds for optimization to complete
+4. 📊 See results with Pareto scatter plot
+5. 📈 Go to **Reports** to see fairness metrics
+
+## 🎯 Algorithm: Improved NSGA-II
+
+Optimizes for three objectives:
+
+1. **f1 → Minimize**: Load imbalance (std dev of shift counts)
+2. **f2 → Minimize**: Weighted penalty (night shift imbalance, preferences, fairness)
+3. **f3 → Maximize**: Preference satisfaction score
+
+### Hard Constraints
+
+- Doctor availability respected
+- Minimum staffing per shift met
+- Night shift rules enforced (rest hours, consecutive night blocking)
+- Seniority weighting applied
+
+## 💡 Usage Tips
+
+- **CSV Import**: Use the provided [doctors-sample.csv](doctors-sample.csv) format
+  - Headers: `id,full_name,title,specialty,seniority_score,pregnant,senior,part_time,difficult_circumstances`
+  - pregnant/senior/part_time/difficult_circumstances: use `true` or `false`
+- **Quick Test**: Use the sample CSV + default config to test scheduling
+- **Optimization**: Start with 50 population, 30 generations for quick results
+- **Results**: Click scatter plot points to select different solutions
+- **Exports**: Generate PDF/Excel reports after scheduling
+
+## 🛠️ Development
+
+### Adding a New Doctor Field
+
+1. Update [backend/app/schemas/models.py](backend/app/schemas/models.py) `Doctor` class
+2. Update [frontend/lib/types.ts](frontend/lib/types.ts) `Doctor` interface
+3. Update [frontend/app/doctors/page.tsx](frontend/app/doctors/page.tsx) form
+
+### Modifying Objectives
+
+Edit [backend/app/services/scheduler.py](backend/app/services/scheduler.py) `compute_objectives()` method
+
+### Changing Frontend Styling
+
+Edit [frontend/app/globals.css](frontend/app/globals.css) CSS variables and component classes
+
+## 🐛 Troubleshooting
+
+**Port 8000 already in use:**
+
+```bash
+# Find and kill process on port 8000
+netstat -ano | findstr :8000
+taskkill /PID <PID> /F
+```
+
+**Python module not found:**
+
+```bash
+# Ensure PYTHONPATH includes source_code directory
+$env:PYTHONPATH = ".."
+```
+
+**Frontend styles not loading:**
+
+```bash
+# Clear Next.js cache
+rm -r frontend/.next
+npm run dev
+```
+
+## 📝 License
+
+See LICENSE file
+
+## 🤝 Contributing
+
+This is an improved version of the original NSGA-II algorithm, tailored for doctor scheduling with real-world fairness constraints.
 
 ---
 
-**Improved NSGA-II** - Effective multi-objective optimization for the 21st century.
+**Last Updated**: March 15, 2026
+**Python**: 3.12.10
+**Node.js**: v24.13.0
+**Status**: ✅ Ready for Development

@@ -1,2 +1,95 @@
+# ============================================
+# Python Backend
+# ============================================
+venv/
+env/
+.venv/
 __pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+build/
+develop-eggs/
+dist/
+downloads/
+eggs/
+.eggs/
+lib/
+lib64/
+parts/
+sdist/
+var/
+wheels/
+*.egg-info/
+.installed.cfg
+*.egg
+.pytest_cache/
+.coverage
+htmlcov/
+*.log
+
+# ============================================
+# Frontend (Next.js)
+# ============================================
+frontend/node_modules/
+/.pnp
+.pnp.*
+.yarn/*
+!.yarn/patches
+!.yarn/plugins
+!.yarn/releases
+!.yarn/versions
+
+# Next.js
+frontend/.next/
+out/
+frontend/.env.local
+frontend/.env.*.local
+
+# testing
+coverage/
+
+# production
+build/
+
+# ============================================
+# IDE / Editor
+# ============================================
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+.DS_Store
+Thumbs.db
+*.sublime-workspace
+*.sublime-project
+
+# ============================================
+# Debug & Logs
+# ============================================
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+.pnpm-debug.log*
+lerna-debug.log*
+.env.local
+.env.*.local
+
+# ============================================
+# Misc
+# ============================================
+.vercel
+*.pem
+.git/
+.gitignore
+
+# CSV files (benchmark data)
 *.csv
+!doctors.csv
+!template*
+
+# OSX
+.AppleDouble
+.LSOverride
