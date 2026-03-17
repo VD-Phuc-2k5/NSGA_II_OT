@@ -4,7 +4,7 @@ Vòng lặp tiến hoá chính của NSGA-II cải tiến.
 
 from __future__ import annotations
 
-from typing import List, Optional
+from typing import Callable, List, Optional
 
 import numpy as np
 
@@ -69,7 +69,11 @@ class NSGA2ImprovedSmart:
         self.history:    List[np.ndarray] = []  # lịch sử F mỗi thế hệ
 
     # Vòng lặp chính
-    def run(self, initial_x: Optional[np.ndarray] = None) -> np.ndarray:
+    def run(
+        self,
+        initial_x: Optional[np.ndarray] = None,
+        progress_callback: Optional[Callable[[int, int], None]] = None,
+    ) -> np.ndarray:
         """
         Chạy thuật toán và trả về ma trận F của quần thể cuối, shape (pop_size, n_obj).
         Nếu initial_x được cung cấp, dùng nó làm quần thể khởi đầu (warm-start).
@@ -95,6 +99,9 @@ class NSGA2ImprovedSmart:
 
             self._update_adaptive_parameters(offspring)
             self.history.append(np.array([ind.F for ind in self.population]))
+
+            if progress_callback is not None:
+                progress_callback(gen + 1, self.n_gen)
 
         return np.array([ind.F for ind in self.population])
 
