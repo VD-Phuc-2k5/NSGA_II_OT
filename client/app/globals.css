@@ -1,26 +1,59 @@
 @import "tailwindcss";
 
 :root {
-  --background: #ffffff;
-  --foreground: #171717;
+  --background: #f4f9f7;
+  --surface: #ffffff;
+  --foreground: #122025;
+  --muted: #4d666f;
+  --accent: #0f766e;
+  --accent-2: #d97706;
+  --border: #d6e5e1;
 }
 
 @theme inline {
   --color-background: var(--background);
+  --color-surface: var(--surface);
   --color-foreground: var(--foreground);
-  --font-sans: var(--font-geist-sans);
-  --font-mono: var(--font-geist-mono);
-}
-
-@media (prefers-color-scheme: dark) {
-  :root {
-    --background: #0a0a0a;
-    --foreground: #ededed;
-  }
+  --color-muted: var(--muted);
+  --color-accent: var(--accent);
+  --color-accent-2: var(--accent-2);
+  --color-border: var(--border);
+  --font-sans: var(--font-manrope);
+  --font-mono: var(--font-jetbrains-mono);
 }
 
 body {
-  background: var(--background);
+  background:
+    radial-gradient(1200px 600px at 5% 0%, #ccebe4 0%, transparent 60%),
+    radial-gradient(1000px 500px at 95% 10%, #ffe6bd 0%, transparent 60%),
+    var(--background);
   color: var(--foreground);
-  font-family: Arial, Helvetica, sans-serif;
+  font-family: var(--font-manrope), sans-serif;
+  min-height: 100vh;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+.glass {
+  background: color-mix(in srgb, var(--surface) 92%, white 8%);
+  border: 1px solid var(--border);
+  border-radius: 16px;
+  box-shadow: 0 16px 40px rgb(18 32 37 / 8%);
+}
+
+.stagger-in {
+  animation: rise-in 0.6s ease both;
+}
+
+@keyframes rise-in {
+  from {
+    opacity: 0;
+    transform: translateY(10px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
 }
