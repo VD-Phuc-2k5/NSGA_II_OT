@@ -5,7 +5,7 @@ from __future__ import annotations
 from datetime import date
 from typing import Dict, List, Literal, Optional
 
-from pydantic import BaseModel, Field, field_validator
+from pydantic import BaseModel, Field, field_validator, model_validator
 
 
 class DoctorProfileDTO(BaseModel):
@@ -25,12 +25,14 @@ class ScheduleGenerationRequestDTO(BaseModel):
 
     start_date: date
     num_days: int = Field(default=7, ge=1, le=31)
-    min_weekly_hours: int = Field(default=48, ge=24, le=72)
-    max_days_off_per_doctor: int = Field(default=4, ge=0, le=14)
-    required_doctors_per_shift: int = Field(default=12, ge=1)
+    max_weekly_hours_per_doctor: int = Field(default=48, ge=24, le=96)
+    max_days_off_per_doctor: int = Field(default=5, ge=0, le=14)
+    required_doctors_per_shift: int = Field(default=5, ge=1)
     shifts_per_day: int = Field(default=2, ge=2, le=2)
     doctors: List[DoctorProfileDTO] = Field(min_length=12)
     holiday_dates: List[date] = Field(default_factory=list)
+    random_seed: Optional[int] = Field(default=None)
+    randomization_strength: float = Field(default=0.08, ge=0.0, le=0.35)
     optimizer_population_size: int = Field(default=120, ge=50, le=400)
     optimizer_generations: int = Field(default=150, ge=50, le=500)
     pareto_options_limit: int = Field(default=6, ge=2, le=12)
@@ -42,6 +44,17 @@ class ScheduleGenerationRequestDTO(BaseModel):
         if len(ids) != len(set(ids)):
             raise ValueError("Danh sach bac si co id bi trung")
         return value
+
+    @model_validator(mode="after")
+    def validate_doctor_constraints(self) -> "ScheduleGenerationRequestDTO":
+        for doctor in self.doctors:
+            unique_days_off = set(doctor.days_off)
+            if len(unique_days_off) > self.max_days_off_per_doctor:
+                raise ValueError(
+                    f"Bac si {doctor.id} vuot qua so ngay nghi toi da "
+                    f"({len(unique_days_off)} > {self.max_days_off_per_doctor})"
+                )
+        return self
 
 
 class ShiftAssignmentDTO(BaseModel):
@@ -61,6 +74,15 @@ class ScheduleQualityMetricsDTO(BaseModel):
     shift_fairness_std: float
     day_off_fairness_std: float
     day_off_fairness_jain: float
+    weekly_fairness_jain: float
+    monthly_fairness_jain: float
+    yearly_fairness_jain: float
+    holiday_fairness_jain: float
+    hard_score_visual: int
+    soft_score_visual: int
+    fairness_score_visual: int
+    overall_score_visual: int
+    score_badges: Dict[str, str]
     weekly_underwork_doctors: List[str]
 
 
@@ -96,12 +118,35 @@ class ParetoScheduleOptionDTO(BaseModel):
     doctor_workload_balances: List[DoctorWorkloadBalanceDTO]
 
 
+class AlgorithmRunMetricsDTO(BaseModel):
+    """Chỉ số đánh giá hiệu quả lần chạy thuật toán NSGA-II."""
+
+    elapsed_seconds: float = Field(description="Thời gian chạy (giây)")
+    n_generations: int = Field(description="Số thế hệ đã chạy")
+    population_size: int = Field(description="Kích thước quần thể")
+    pareto_front_size: int = Field(description="Số nghiệm trên Pareto front 1")
+    best_hard_objective: float = Field(description="Giá trị mục tiêu hard (penalty) tốt nhất trên front 1")
+    best_balance_objective: float = Field(description="Giá trị mục tiêu balance tốt nhất trên front 1")
+    convergence_hard_ratio: Optional[float] = Field(
+        default=None,
+        description="Mức cải thiện mục tiêu hard từ gen đầu → gen cuối (0–1, càng cao càng tốt)",
+    )
+    convergence_balance_ratio: Optional[float] = Field(
+        default=None,
+        description="Mức cải thiện mục tiêu balance từ gen đầu → gen cuối (0–1)",
+    )
+
+
 class ScheduleGenerationEnvelopeDTO(BaseModel):
     """Ket qua tong hop gom nghiem chon va danh sach phuong an Pareto."""
 
     selected_option_id: str
     selected_schedule: ScheduleGenerationResultDTO
     pareto_options: List[ParetoScheduleOptionDTO]
+    algorithm_run_metrics: Optional[AlgorithmRunMetricsDTO] = Field(
+        default=None,
+        description="Chỉ số hiệu quả lần chạy thuật toán (để đánh giá độ hội tụ, thời gian)",
+    )
 
 
 class ScheduleRequestAcceptedDTO(BaseModel):
