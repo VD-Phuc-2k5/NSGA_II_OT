@@ -124,7 +124,17 @@ function generateDoctors(
 
     const requestedDaysOffCount = Math.min(
       numDays,
-      Math.max(1, maxDaysOffPerDoctor + ((index % 5) - 1))
+      // Keep `days_off` within backend constraint:
+      // `len(unique(doctor.days_off)) <= max_days_off_per_doctor`
+      //
+      // The old formula could exceed `maxDaysOffPerDoctor`, causing FastAPI 422.
+      Math.max(
+        0,
+        Math.min(
+          maxDaysOffPerDoctor,
+          maxDaysOffPerDoctor + Math.min(0, (index % 5) - 1)
+        )
+      )
     );
     const daysOffSet = new Set<string>();
     for (let offset = 0; offset < requestedDaysOffCount; offset += 1) {
@@ -200,7 +210,7 @@ export default function Home() {
   const [numDoctorsInput, setNumDoctorsInput] = useState("200");
   const [numDaysInput, setNumDaysInput] = useState("30");
   const [requiredDoctorsInput, setRequiredDoctorsInput] = useState("12");
-  const [minWeeklyHoursInput, setMinWeeklyHoursInput] = useState("48");
+  const [maxWeeklyHoursInput, setMaxWeeklyHoursInput] = useState("48");
   const [maxDaysOffInput, setMaxDaysOffInput] = useState("4");
   const [populationSizeInput, setPopulationSizeInput] = useState("120");
   const [generationsInput, setGenerationsInput] = useState("150");
@@ -645,7 +655,7 @@ export default function Home() {
       const numDays = sanitizeInt(numDaysInput, 7, 31, 7);
       const numDoctors = sanitizeInt(numDoctorsInput, 12, 400, 200);
       const requiredDoctors = sanitizeInt(requiredDoctorsInput, 6, 30, 12);
-      const minWeeklyHours = sanitizeInt(minWeeklyHoursInput, 24, 72, 48);
+      const maxWeeklyHours = sanitizeInt(maxWeeklyHoursInput, 24, 96, 48);
       const maxDaysOffPerDoctor = sanitizeInt(maxDaysOffInput, 0, 14, 4);
       const populationSize = sanitizeInt(populationSizeInput, 50, 400, 120);
       const generations = sanitizeInt(generationsInput, 50, 500, 150);
@@ -662,7 +672,7 @@ export default function Home() {
       const payload = {
         start_date: startDate,
         num_days: numDays,
-        min_weekly_hours: minWeeklyHours,
+        max_weekly_hours_per_doctor: maxWeeklyHours,
         max_days_off_per_doctor: maxDaysOffPerDoctor,
         required_doctors_per_shift: requiredDoctors,
         shifts_per_day: 2,
@@ -788,13 +798,13 @@ export default function Home() {
             />
           </label>
           <label className='flex flex-col gap-2 text-sm'>
-            Gio lam toi thieu / tuan
+            Gio lam toi da / tuan
             <input
               type='number'
               min={24}
-              max={72}
-              value={minWeeklyHoursInput}
-              onChange={(e) => setMinWeeklyHoursInput(e.target.value)}
+              max={96}
+              value={maxWeeklyHoursInput}
+              onChange={(e) => setMaxWeeklyHoursInput(e.target.value)}
               className='border-border rounded-xl border bg-white px-3 py-2'
             />
           </label>
