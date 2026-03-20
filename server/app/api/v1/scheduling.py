@@ -9,7 +9,6 @@ from fastapi import APIRouter, HTTPException
 from app.application.services.schedule_job_manager import ScheduleJobManager
 from app.application.use_cases.generate_schedule import GenerateScheduleUseCase
 from app.domain.schemas import (
-    ScheduleGenerationEnvelopeDTO,
     ScheduleGenerationRequestDTO,
     ScheduleRequestAcceptedDTO,
     ScheduleRequestProgressDTO,
@@ -41,19 +40,5 @@ def get_schedule_progress(request_id: str) -> ScheduleRequestProgressDTO:
     """Trả tiến độ hiện tại; khi completed sẽ kèm kết quả lịch trực."""
     progress = job_manager.get_progress(request_id)
     if progress is None:
-        raise HTTPException(status_code=404, detail="Khong tim thay request_id")
+        raise HTTPException(status_code=404, detail="Không tìm thấy request_id")
     return progress
-
-
-@router.post(
-    "/generate-sync",
-    response_model=ScheduleGenerationEnvelopeDTO,
-    summary="Sinh lịch trực đồng bộ (fallback)",
-)
-def generate_schedule_sync(payload: ScheduleGenerationRequestDTO) -> ScheduleGenerationEnvelopeDTO:
-    """API đồng bộ để debug nhanh hoặc tích hợp đơn giản."""
-    try:
-        use_case = GenerateScheduleUseCase()
-        return use_case.execute(payload)
-    except ValueError as exc:
-        raise HTTPException(status_code=400, detail=str(exc)) from exc
