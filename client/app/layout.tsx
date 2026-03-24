@@ -4,7 +4,7 @@ import "./globals.css";
 
 const manrope = Manrope({
   variable: "--font-manrope",
-  subsets: ["latin"]
+  subsets: ["latin", "vietnamese"]
 });
 
 const jetbrainsMono = JetBrains_Mono({
@@ -13,8 +13,8 @@ const jetbrainsMono = JetBrains_Mono({
 });
 
 export const metadata: Metadata = {
-  title: "Doctor Duty Scheduler",
-  description: "Lập lịch ca trực bác sĩ bằng NSGA-II cải tiến"
+  title: "Hệ thống lập lịch trực bác sĩ",
+  description: "Tối ưu lịch trực ngoại trú bằng thuật toán NSGA-II cải tiến"
 };
 
 export default function RootLayout({
