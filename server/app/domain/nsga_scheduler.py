@@ -238,8 +238,23 @@ class HardConstraintManager:
         repaired = self._repair_intern_supervisors(repaired)
         repaired = self._repair_licenses(repaired)
         repaired = self._repair_room_capacity(repaired)
+        repaired = self._rebalance_avoidable_zero_shifts(repaired)
         
         return repaired
+
+    def _compute_shift_counts(self, assignment: Dict[Tuple[int, int, int], List[int]]) -> np.ndarray:
+        """Đếm số ca hiện tại của từng bác sĩ (theo slot ngày-ca, không nhân số phòng)."""
+        counts = np.zeros(self.n_doctors, dtype=np.int32)
+        seen_slots = [set() for _ in range(self.n_doctors)]
+
+        for (day_idx, shift_idx, _room_idx), doctors in assignment.items():
+            shift_slot = day_idx * self.n_shifts + shift_idx
+            for doctor_idx in doctors:
+                if shift_slot not in seen_slots[doctor_idx]:
+                    seen_slots[doctor_idx].add(shift_slot)
+                    counts[doctor_idx] += 1
+
+        return counts
     
     def _repair_forbidden_days(self, assignment: Dict) -> Dict:
         """Thay thế bác sĩ bị xếp vào ngày nghỉ."""
@@ -247,6 +262,7 @@ class HardConstraintManager:
             for i, doctor_idx in enumerate(doctors):
                 if day_idx in self.doctors[doctor_idx].forbidden_days:
                     replacement = self._find_replacement(
+                        assignment,
                         day_idx, shift_idx, room_idx,
                         set(doctors), {day_idx}
                     )
@@ -278,6 +294,7 @@ class HardConstraintManager:
             for doctor_idx, room_idx, pos, day_idx in duplicates:
                 doctors_list = assignment[(day_idx, shift_idx, room_idx)]
                 replacement = self._find_replacement(
+                    assignment,
                     day_idx, shift_idx, room_idx,
                     set(doctors_list), {day_idx}
                 )
@@ -293,7 +310,7 @@ class HardConstraintManager:
             interns = [d for d in doctors if self.doctors[d].is_intern]
             
             if interns and not has_supervisor:
-                supervisor = self._find_supervisor(day_idx, shift_idx, room_idx, set(doctors))
+                supervisor = self._find_supervisor(assignment, day_idx, shift_idx, room_idx, set(doctors))
                 if supervisor is not None:
                     idx = doctors.index(interns[0])
                     doctors[idx] = supervisor
@@ -306,6 +323,7 @@ class HardConstraintManager:
             for i, doctor_idx in enumerate(doctors):
                 if not self.doctors[doctor_idx].has_license:
                     replacement = self._find_replacement(
+                        assignment,
                         day_idx, shift_idx, room_idx,
                         set(doctors), {day_idx},
                         require_license=True
@@ -324,6 +342,7 @@ class HardConstraintManager:
                 existing = set(doctors)
                 for _ in range(target - current):
                     new_doctor = self._find_replacement(
+                        assignment,
                         day_idx, shift_idx, room_idx,
                         existing, {day_idx}
                     )
@@ -339,9 +358,59 @@ class HardConstraintManager:
                 del doctors[target:]
         
         return assignment
+
+    def _rebalance_avoidable_zero_shifts(self, assignment: Dict) -> Dict:
+        """Giảm bác sĩ 0 ca có thể tránh bằng hoán đổi từ bác sĩ đang quá tải."""
+        unavoidable_zeros = max(0, self.n_doctors - (self.n_days * self.n_shifts * self.rooms * self.dproom))
+
+        for _ in range(self.n_doctors):
+            counts = self._compute_shift_counts(assignment)
+            zero_docs = [idx for idx, c in enumerate(counts) if c == 0]
+            if len(zero_docs) <= unavoidable_zeros:
+                break
+
+            overloaded = np.argsort(-counts)
+            improved = False
+
+            for zero_doc in zero_docs:
+                for donor in overloaded:
+                    if donor == zero_doc or counts[donor] <= 1:
+                        continue
+
+                    # Tìm 1 slot của donor để chuyển cho zero_doc mà không vi phạm ngày nghỉ
+                    for (day_idx, shift_idx, room_idx), doctors in assignment.items():
+                        if donor not in doctors:
+                            continue
+                        if zero_doc in doctors:
+                            continue
+                        if day_idx in self.doctors[zero_doc].forbidden_days:
+                            continue
+
+                        pos = doctors.index(donor)
+                        doctors[pos] = zero_doc
+
+                        # Giữ hard constraints sau khi thay thế
+                        assignment = self._repair_intern_supervisors(assignment)
+                        assignment = self._repair_licenses(assignment)
+                        assignment = self._repair_duplicates(assignment)
+
+                        improved = True
+                        break
+
+                    if improved:
+                        break
+
+                if improved:
+                    break
+
+            if not improved:
+                break
+
+        return assignment
     
     def _find_replacement(
         self,
+        assignment: Dict,
         day_idx: int,
         shift_idx: int,
         room_idx: int,
@@ -369,18 +438,25 @@ class HardConstraintManager:
         if any(self.doctors[e].is_intern for e in excluded):
             supervisors = [c for c in candidates if not self.doctors[c].is_intern]
             if supervisors:
-                return supervisors[0]
+                candidates = supervisors
         
-        return candidates[0] if candidates else None
+        if not candidates:
+            return None
+
+        # Ưu tiên bác sĩ đang có ít ca hơn để giảm lệch tải.
+        counts = self._compute_shift_counts(assignment)
+        return min(candidates, key=lambda c: (counts[c], c))
     
     def _find_supervisor(
         self,
+        assignment: Dict,
         day_idx: int,
         shift_idx: int,
         room_idx: int,
         excluded: Set[int]
     ) -> Optional[int]:
         """Tìm supervisor khả dụng."""
+        candidates: List[int] = []
         for doctor in self.doctors:
             if doctor.idx in excluded:
                 continue
@@ -390,8 +466,13 @@ class HardConstraintManager:
                 continue
             if doctor.is_intern:
                 continue
-            return doctor.idx
-        return None
+            candidates.append(doctor.idx)
+
+        if not candidates:
+            return None
+
+        counts = self._compute_shift_counts(assignment)
+        return min(candidates, key=lambda c: (counts[c], c))
 
 
 # ---------------------------------------------------------------------------
@@ -496,6 +577,8 @@ class DutySchedulingProblem:
         
         decoded = {}
         all_indices = list(range(self.n_doctors))
+        assigned_shift_counts = np.zeros(self.n_doctors, dtype=np.int32)
+        assigned_slots = [set() for _ in range(self.n_doctors)]
         
         for day_idx in range(self.n_days):
             for shift_idx in range(self.n_shifts):
@@ -516,7 +599,8 @@ class DutySchedulingProblem:
                         available = [i for i in all_indices if i not in room_seen]
                         
                         if available:
-                            available.sort(key=lambda i: -noise[i])
+                            # Ưu tiên bác sĩ ít ca trước, dùng noise để phá hòa.
+                            available.sort(key=lambda i: (assigned_shift_counts[i], -noise[i], i))
                             for fill_idx in available:
                                 if len(unique) >= self.dproom:
                                     break
@@ -525,6 +609,13 @@ class DutySchedulingProblem:
                     
                     decoded[(day_idx, shift_idx, room_idx)] = unique[:self.dproom]
                     shift_seen.update(unique[:self.dproom])
+
+                # Cập nhật số ca theo slot (mỗi bác sĩ tối đa +1 cho 1 ngày-ca)
+                shift_slot = day_idx * self.n_shifts + shift_idx
+                for doctor_idx in shift_seen:
+                    if shift_slot not in assigned_slots[doctor_idx]:
+                        assigned_slots[doctor_idx].add(shift_slot)
+                        assigned_shift_counts[doctor_idx] += 1
         
         # Repair to guarantee hard constraints
         return self.constraint_manager.repair(decoded)
@@ -593,7 +684,7 @@ class DutySchedulingProblem:
                             shift_slots_counted[doctor_idx].add(shift_slot)
                             shift_counts[doctor_idx] += 1
                             
-                            weekly_hours[doctor_idx][iso_week] += int(self.shift_hours)
+                            weekly_hours[doctor_idx][iso_week] += float(self.shift_hours)
                             weekly_counts[doctor_idx][iso_week] += 1
                             monthly_counts[doctor_idx][month_key] += 1
                             
@@ -657,6 +748,13 @@ class DutySchedulingProblem:
             weekend_off = total_weekends - weekend_worked
             if weekend_off < 2:
                 penalty += 0.5 * (2 - weekend_off)
+
+        # SC-04b: Tránh bác sĩ bị 0 ca (trừ phần bất khả kháng khi tổng ca < số bác sĩ)
+        unavoidable_zeros = max(0, self.n_doctors - self.total_shift_slots)
+        zero_shift_count = int(np.sum(shift_counts == 0))
+        avoidable_zero_count = max(0, zero_shift_count - unavoidable_zeros)
+        if avoidable_zero_count > 0:
+            penalty += 30.0 * float(avoidable_zero_count)
         
         # SC-05: Số ca sát mục tiêu công bằng + đăng ký trực thêm (chỉ cho phép lệch ~1 ca
         # do làm tròn; vượt quá chỉ chấp nhận khi có quota trực thêm trong T_i)
@@ -675,6 +773,14 @@ class DutySchedulingProblem:
         allowed_spread = 1.0 + float(max_extra_reg)
         if spread > allowed_spread + 0.5:
             penalty += 18.0 * ((spread - allowed_spread) ** 2)
+
+        # Phạt thêm khi đuôi phân phối quá lệch (ví dụ 1-2 bác sĩ vượt xa phần còn lại)
+        if self.n_doctors >= 4:
+            p10 = float(np.percentile(sc, 10))
+            p90 = float(np.percentile(sc, 90))
+            tail_gap = p90 - p10
+            if tail_gap > allowed_spread + 1.0:
+                penalty += 12.0 * ((tail_gap - allowed_spread - 1.0) ** 2)
         
         # SC-06: Công bằng theo tháng
         for idx in range(self.n_doctors):
@@ -734,20 +840,25 @@ class DutySchedulingProblem:
         max_abs = float(np.max(np.abs(sc - T))) if self.n_doctors else 0.0
         excess = max(0.0, max_abs - 1.0)
         tier_balance = min(1.0, (excess / 4.0) ** 2)
-        return float(0.32 * tier_gini + 0.68 * tier_balance)
+
+        unavoidable_zeros = max(0, self.n_doctors - self.total_shift_slots)
+        zero_shift_count = int(np.sum(shift_counts == 0))
+        avoidable_zero_count = max(0, zero_shift_count - unavoidable_zeros)
+        normalizer = max(1, self.n_doctors - unavoidable_zeros)
+        tier_zero = min(1.0, float(avoidable_zero_count) / float(normalizer))
+
+        return float(0.28 * tier_gini + 0.52 * tier_balance + 0.20 * tier_zero)
     
     def _gini_coefficient(self, values: np.ndarray) -> float:
         """Calculate Gini coefficient."""
         if values.size == 0:
             return 0.0
-        
-        positive_values = values[values > 0]
-        if len(positive_values) == 0:
-            return 0.0
-        
-        sorted_values = np.sort(positive_values)
+
+        # Tính trên toàn bộ bác sĩ (kể cả 0 ca) để phản ánh đúng bất công phân bổ.
+        clipped_values = np.maximum(values.astype(np.float64), 0.0)
+        sorted_values = np.sort(clipped_values)
         n = len(sorted_values)
-        sum_values = np.sum(sorted_values)
+        sum_values = float(np.sum(sorted_values))
         
         if sum_values == 0:
             return 0.0
