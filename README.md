@@ -1,24 +1,23 @@
 # NSGA-II Cải Tiến Cho Bài Toán Lập Lịch Ca Trực Bác Sĩ
 
-Tài liệu này tóm tắt cách ứng dụng NSGA-II cải tiến trong dự án để sinh lịch trực ngoài trú theo ràng buộc nghiệp vụ bệnh viện.
+Tài liệu này giới thiệu cách hệ thống sử dụng NSGA-II để lập lịch trực bác sĩ ngoài trú, đảm bảo thỏa mãn các yêu cầu vận hành của bệnh viện.
 
-## 1. Mục tiêu bài toán
+## 1. Mục tiêu
 
-- Đầu vào là thông tin bác sĩ, ngày bắt đầu, số ngày lập lịch, cấu hình ca/phòng và các ràng buộc.
-- Đầu ra là tập phương án Pareto và một phương án được chọn sẵn (selected option).
-- Ràng buộc cứng được đảm bảo 100% (nếu vi phạm thì dừng sớm), ràng buộc mềm được tối ưu bằng objective.
+- **Đầu vào**: Danh sách bác sĩ, ngày bắt đầu, số ngày, ...
+- **Đầu ra**: Nhiều phương án tối ưu cùng của Pareto + một phương án đã được chọn.
 
-## 2. Input thuật toán là gì?
+## 2. Input của thuật toán
 
-### 2.1 Một cá thể trong quá trình chạy thuật toán là gì?
+### 2.1 Cá thể (candidate solution) là gì?
 
-Trong code, một cá thể (individual) là 1 vector số nguyên 1 chiều `x` có độ dài:
+Một cá thể được biểu diễn là một danh sách số (vector), có độ dài:
 
 ```text
 n_var = num_days * shifts_per_day * rooms_per_shift * doctors_per_room
 ```
 
-Mỗi phần tử trong vector là `doctor_idx` (chỉ số bác sĩ), sau đó được `decode()` thành lịch 4 chiều:
+Mỗi số trong danh sách là **chỉ số của một bác sĩ**. Khi xử lý, hệ thống `decode()` nó thành lịch cụ thể:
 
 ```text
 (day_idx, shift_idx, room_idx, slot_idx) -> doctor_idx
@@ -34,13 +33,14 @@ Bảng dữ liệu minh hoạ (ví dụ nhỏ):
 | 0       | 1 (afternoon) | 0 (P-01) | 0        | 2                | Bác sĩ #2 trực ngày đầu, ca chiều, phòng P-01           |
 | 1       | 0 (morning)   | 0 (P-01) | 0        | 15               | Bác sĩ #15 trực ngày thứ 2, ca sáng, phòng P-01         |
 
-Lưu ý quan trọng:
+**Quá trình xử lý:**
 
-- Vector thuần này có thể chứa trùng/vi phạm ràng buộc.
-- Sau `decode()`, hệ thống chạy `repair()` để sửa vi phạm hard constraints (ngày nghỉ, trùng người, intern-supervisor, license, đủ số người mỗi phòng).
-- Vì vậy, cá thể được đánh giá objective là lịch sau khi đã decode + repair.
+1. Danh sách số ban đầu có thể vi phạm yêu cầu (người trùng, giờ quá, v.v).
+2. **`decode()`**: Chuyển danh sách thành lịch cụ thể.
+3. **`repair()`**: Sửa các yêu cầu cứng bị vi phạm (ngày nghỉ, người trùng, v.v).
+4. **Đánh giá**: Lịch sau khi sửa mới được đánh giá chất lượng.
 
-Ví dụ JSON sau decode (rút gọn):
+**Lịch sau khi xử lý** (JSON):
 
 ```json
 {
@@ -61,68 +61,60 @@ Ví dụ JSON sau decode (rút gọn):
 }
 ```
 
-## 3. Fitness function
+## 3. Hàm mục tiêu
 
-Trong implementation hiện tại, `evaluate()` dùng 2 objective:
+Hệ thống dùng **2 chỉ số** để đánh giá chất lượng lịch:
 
-- `f1`: tổng soft-penalty (càng nhỏ càng tốt).
-- `f2`: combined unfairness (đánh giá công bằng, càng nhỏ càng tốt).
+- **f1**: Mức độ vi phạm yêu cầu mềm (càng nhỏ càng tốt).
+- **f2**: Mức độ công bằng trong phân công ca (càng nhỏ - càng công bằng - càng tốt).
 
-### 3.1 Hard constraints (HC) được xử lý trước objective
+### 3.1 Yêu cầu cứng (Hard constraints)
 
-Hard constraints được xử lý theo 2 lớp:
+**Yêu cầu cứng** là những quy tắc phải được thỏa 100%. Nếu vi phạm sẽ bị loại. Hệ thống có 2 cách xử lý:
 
-Repair trong `HardConstraintManager.repair()` để sửa vi phạm phát sinh do crossover/mutation
+1. **Lúc kiểm tra**: Nếu vi phạm nặng, dừng ngay.
+2. **Sau tạo**: Nếu có vi phạm nhẹ, tự động sửa.
 
-Danh sách HC chính:
+**Danh sách (10 quy tắc)**:
 
-- HC-01: Đủ số bác sĩ cho mỗi ca (rooms x doctors_per_room)
-- HC-02: Đủ nhân lực để tránh vượt giới hạn giờ/tuần
-- HC-03: Số ngày nghỉ đăng ký của từng bác sĩ không vượt trần
-- HC-04: Intern phải có supervisor trong ca
-- HC-05: License hợp lệ
-- HC-06: `preferred_extra_days` không trùng `days_off`
-- HC-07: Feasibility workload trung bình
-- HC-08: Số phòng và số bác sĩ/phòng hợp lý
-- HC-09: Số ca/ngày hợp lý
-- HC-10: Số ngày lập lịch trong miền hợp lệ
+1. Mỗi ca phải có đủ bác sĩ.
+2. Không vượt giờ làm việc mỗi tuần.
+3. Số ngày nghỉ của từng bác sĩ không vượt hạn.
+4. Thực tập phải làm cùng bác sĩ kinh nghiệm.
+5. Bác sĩ phải có chứng chỉ hợp lệ.
+6. Ngày muốn trực thêm không trùng ngày nghỉ.
+7. Lượng công việc hợp lý.
+8. Số phòng và số bác sĩ/phòng hợp lý.
+9. Số ca mỗi ngày hợp lý.
+10. Tổng số ngày lập lịch hợp lý.
 
 Nếu HC vi phạm ở validate: trả lời lỗi ngay, không tối ưu.
 
-### 3.2 Soft constraints trong f1 (`_compute_soft_penalty`)
+### 3.2 Yêu cầu mềm (Soft constraints) trong f1
 
-f1 gồm các thành phần penalty/bonus:
+Các quy tắc mềm giúp làm lịch tốt hơn. Hệ thống đánh giá chúng qua f1:
 
-- SC-01: Phạt nếu làm quá 5 ngày liên tiếp
-- SC-02: Phạt nếu vượt giới hạn giờ/tuần
-- SC-03: Thường khi đập ứng ngày ưu tiên, phạt nếu thiếu mục kữ vọng
-- SC-04: Công bằng trực cuối tuần
-- SC-04b: Phạt mạnh bác sĩ 0 ca (trừ phần bất khã káng khi tổng slot < số bác sĩ)
-- SC-05: Phạt lệch số ca so với vector mục tiêu T (có tính đến đăng ký trực thêm)
-- Tăng cường SC-05: Phạt outlier dưới theo khoảng `P90 - P10`
-- SC-06: Công bằng theo tháng
-- SC-07: Cân bằng theo nhóm chuyên khoa
-- SC-08: Phạt độ lệch chuẩn workload tổng thể
+- **SC-01**: Không làm liên tiếp quá 5 ngày.
+- **SC-02**: Không vượt giờ mỗi tuần.
+- **SC-03**: Mức độ thỏa ngày muốn trực thêm, tránh quá ít.
+- **SC-04**: Trực cuối tuần có quãng.
+- **SC-04b**: Tránh bác sĩ không có ca (khi có thể).
+- **SC-05**: Cân bằng số ca giữa các bác sĩ.
 
-### 3.3 Đánh giá thưởng/phạt dựa theo ràng buộc (chi tiết)
+### 3.3 Bảng điểm phạt thưởng
 
-Cơ chế chấm điểm trong code:
+**Cách tính f1**:
 
-```text
-f1 = max(0, TongPhat - TongThuong)
+```
+f1 = max(0, Tổng Phạt - Tổng Thưởng)
 ```
 
-Trong đó:
+**Nguyên tắc**:
 
-- `TổngPhạt`: tổng penalty từ SC-01..SC-08
-- `TổngThưởng`: bonus từ mục đáp ứng ngày ưu tiên (SC-03)
+- **Yêu cầu cứng**: Không thể vi phạm. Nếu có, sẽ bị loại hoặc được sửa tự động.
+- **Yêu cầu mềm**: Quy thành điểm để hệ thống so sánh và chọn lịch tốt nhất.
 
-Nguyên tắc:
-
-- Hard constraints (HC): không chấm điểm. Nếu vi phạm năng ở validate thì loại ngay, nếu vi phạm nhẹ trong quá trình tạo nghiệm thì được repair.
-- Soft constraints (SC): được quy đổi thành điểm phạt/thưởng để NSGA-II so sánh các cá thể.
-
-Bảng hệ số thưởng/phạt đang áp dụng:
+**Chi tiết bảng điểm**:
 
 | Ràng buộc                            | Kiểu        | Công thức chính                            | Hệ số |
 | ------------------------------------ | ----------- | ------------------------------------------ | ----- |
@@ -140,44 +132,57 @@ Bảng hệ số thưởng/phạt đang áp dụng:
 | SC-08 Lệch chuẩn số ca               | Phạt        | `2.5 * std(shift_counts)`                  | 2.5   |
 | SC-08 Lệch chuẩn weighted workload   | Phạt        | `0.05 * std(weighted_counts)`              | 0.05  |
 
-Vì sao cần hệ số khác nhau?
+## 4. Yêu cầu công bằng (f2)
 
-- Mục vi phạm gây rủi ro văn hành cao (ví dụ: bác sĩ 0 ca có thể tránh, lệch dưới lớn) được gán trong số cao.
-- Mục điều chỉnh nhẹ (ví dụ: cân bằng theo tháng/chuyên khoa) có hệ số nhỏ hơn để tránh làm mềm tất cả objective.
+**f2** là chỉ số đánh giá mức độ công bằng trong việc chia ca giữa các bác sĩ. Nó kết hợp 3 yếu tố:
 
-Ví dụ mini:
+1. **Độ công bằng Gini**: So sánh mức ca thực tế.
+2. **Cân bằng**: Không ai cao hơn hoặc thấp hơn bình quân.
+3. **Tránh 0 ca**: Không ai không có ca (khi có thể).
 
-```text
-TỏngPhạt = 40.8
-TỏngThưởng = 3.2
-=> f1 = max(0, 40.8 - 3.2) = 37.6
+**Công thức**:
+
+```
+f2 = 0.28 × công bằng Gini + 0.52 × cân bằng + 0.20 × tránh 0 ca
 ```
 
-Kết luận:
+**Tại sao cần f2 riêng?**
 
-- f1 càng thấp thì lịch càng "tốt" theo quy tắc nghiệp vụ mềm.
-- Bonus không được phép làm f1 âm (có chắn `max(0, ...)`)
+- **f1** chỉ tập trung vào: có thực hiện đúng các quy tắc không?
+- **f2** chỉ tập trung vào: có công bằng không?
 
-## 3.4. f2 là gì? f2 có các ràng buộc nào?
+## 5. Cơ chế hoạt động
 
-f2 trong `_compute_combined_unfairness()` là tổng hợp 3 tier:
+Hệ thống thực hiện các bước:
 
-1. `tier_gini`: kết hợp Gini và `(1 - JFI)` trên số ca đã điều chỉnh theo đăng ký trực thêm.
-2. `tier_balance`: phạt độ lệch tuyệt đối tới đa số với mục tiêu T.
-3. `tier_zero`: phạt tỷ lệ bác sĩ 0 ca có thể tránh được.
+1. **Khởi tạo**: Tạo nhiều lịch ngẫu nhiên để thử.
+2. **Biến đổi**: Tổng hợp, lai ghép, đột biến để có cá thể mới.
+3. **Decode + Repair**: Chuyển danh sách số thành lịch cụ thể, sửa yêu cầu cứng.
+4. **Đánh giá**: Tính f1, f2 cho mỗi lịch.
+5. **Lựa chọn tốt**: Dùng non-dominated sorting để giữ những lịch tối ưu Pareto.
+6. **Lặp lại**: Cho đến khi không còn tiến bộ hoặc hết thời gian.
+7. **Kết quả**: Trả ra danh sách lịch Pareto + 1 lịch được chọn.
 
-Công thức trong code hiện tại:
+## 7. Đánh giá độ tin cậy
 
-```text
-f2 = 0.28 * tier_gini + 0.52 * tier_balance + 0.20 * tier_zero
-```
+Độ tin cậy nên được đánh giá theo 4 khía cạnh:
 
-Tại sao tách f2 riêng?
+### A. Tính đúng yêu cầu cứng
 
-- f1 tập trung vào "đúng quy tắc".
-- f2 tập trung vào "phân bố công bằng".
-- NSGA-II cân bằng 2 mục tiêu xung đột thay vì ẇp một số duy nhất.
+### B. Tính ổn định kết quả
 
-## 7. Output thuật toán là gì?
+- Độ lệch chuẩn của "độ công bằng"
+- Độ lệch chuẩn của khoảng min-max số ca.
 
-Lịch và phương án Pareto (`/schedule`)
+### C. Công bằng vận hành
+
+**Theo dõi qua các lần chạy**:
+
+- Số bác sĩ không có ca (có thể tránh được).
+- Khoảng cách P90-P10 (số ca giữa người nhiều và người ít).
+- Khoảng min-max số ca.
+
+### D. Hiệu năng
+
+- Thời gian chạy
+- Kích cỡ danh sách Pareto.
