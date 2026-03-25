@@ -5,7 +5,7 @@ import { JobProgressSection } from "@/components/schedule/JobProgressSection";
 import { ScheduleControlSection } from "@/components/schedule/ScheduleControlSection";
 import { RunMetricsSection } from "@/components/schedule/RunMetricsSection";
 import { ParetoOptionsSection } from "@/components/schedule/ParetoOptionsSection";
-import { FairnessSection } from "@/components/schedule/FairnessSection";
+import { DoctorSummarySection } from "@/components/schedule/DoctorSummarySection";
 import { ShiftAverageSection } from "@/components/schedule/ShiftAverageSection";
 import { TotalsSummarySection } from "@/components/schedule/TotalsSummarySection";
 import { TimetableSection } from "@/components/schedule/TimetableSection";
@@ -407,7 +407,9 @@ export default function Home() {
         />
       ) : null}
 
-      {m ? <FairnessSection metrics={m} /> : null}
+      {selectedParetoSchedule ? (
+        <DoctorSummarySection selectedParetoSchedule={selectedParetoSchedule} />
+      ) : null}
 
       {shiftAverageStats ? <ShiftAverageSection stats={shiftAverageStats} /> : null}
 
