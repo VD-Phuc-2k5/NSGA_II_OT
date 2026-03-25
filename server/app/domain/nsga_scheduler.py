@@ -26,7 +26,7 @@ from .schemas import (
 
 
 SHIFT_NAMES = ("morning", "afternoon")
-SHIFT_HOURS = 8.0
+SHIFT_HOURS = 4.5
 
 
 # ---------------------------------------------------------------------------

@@ -11,10 +11,9 @@ from uuid import uuid4
 from app.application.use_cases.generate_schedule import GenerateScheduleUseCase
 from app.domain.schemas import (
     ScheduleGenerationEnvelopeDTO,
-    ScheduleGenerationRequestDTO,
     ScheduleJobStatusDTO,
     ScheduleRequestAcceptedDTO,
-    ScheduleSetupAcceptedDTO,
+    ScheduleRunRequestDTO,
 )
 
 
@@ -38,25 +37,8 @@ class ScheduleJobManager:
         self._executor = ThreadPoolExecutor(max_workers=max_workers)
         self._lock = Lock()
         self._jobs: Dict[str, _JobState] = {}
-        self._setups: Dict[str, ScheduleGenerationRequestDTO] = {}
 
-    def create_setup(self, payload: ScheduleGenerationRequestDTO) -> ScheduleSetupAcceptedDTO:
-        setup_id = str(uuid4())
-        with self._lock:
-            self._setups[setup_id] = payload
-        return ScheduleSetupAcceptedDTO(
-            setup_id=setup_id,
-            message="Đã lưu thông số. Gọi POST /schedules/run để bắt đầu tối ưu.",
-        )
-
-    def start_from_setup(self, setup_id: str) -> ScheduleRequestAcceptedDTO:
-        with self._lock:
-            payload = self._setups.get(setup_id)
-        if payload is None:
-            raise KeyError("Không tìm thấy setup_id")
-        return self.submit(payload)
-
-    def submit(self, payload: ScheduleGenerationRequestDTO) -> ScheduleRequestAcceptedDTO:
+    def submit(self, payload: ScheduleRunRequestDTO) -> ScheduleRequestAcceptedDTO:
         request_id = str(uuid4())
         job = _JobState(
             request_id=request_id,
@@ -117,7 +99,7 @@ class ScheduleJobManager:
             for key, value in kwargs.items():
                 setattr(job, key, value)
 
-    def _run_job(self, request_id: str, payload: ScheduleGenerationRequestDTO) -> None:
+    def _run_job(self, request_id: str, payload: ScheduleRunRequestDTO) -> None:
         try:
             use_case = GenerateScheduleUseCase()
 

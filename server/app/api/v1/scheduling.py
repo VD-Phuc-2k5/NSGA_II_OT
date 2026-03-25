@@ -1,9 +1,4 @@
-"""
-Router API v1 cho nghiệp vụ lập lịch ca trực.
-
-Luồng: POST /setup (lưu thông số) → POST /run (bắt đầu job) → GET /progress (trạng thái)
-→ GET /jobs/{id}/schedule và GET /jobs/{id}/metrics khi hoàn tất.
-"""
+"""Router API v1 cho nghiệp vụ lập lịch ca trực (1 endpoint submit)."""
 
 from __future__ import annotations
 
@@ -16,13 +11,11 @@ from app.application.services.schedule_view_builder import (
 )
 from app.domain.schemas import (
     ScheduleGenerationEnvelopeDTO,
-    ScheduleGenerationRequestDTO,
     ScheduleJobMetricsResponseDTO,
     ScheduleJobScheduleResponseDTO,
     ScheduleJobStatusDTO,
     ScheduleRequestAcceptedDTO,
     ScheduleRunRequestDTO,
-    ScheduleSetupAcceptedDTO,
 )
 
 router = APIRouter(prefix="/schedules", tags=["Schedules"])
@@ -47,29 +40,14 @@ def _require_completed_envelope(request_id: str) -> ScheduleGenerationEnvelopeDT
 
 
 @router.post(
-    "/setup",
-    response_model=ScheduleSetupAcceptedDTO,
-    summary="Lưu thông số tạo lịch (chưa chạy tối ưu)",
-)
-def setup_schedule(payload: ScheduleGenerationRequestDTO) -> ScheduleSetupAcceptedDTO:
-    """Nhận toàn bộ thông số và danh sách bác sĩ; trả setup_id để gọi /run."""
-    try:
-        return job_manager.create_setup(payload)
-    except ValueError as exc:
-        raise HTTPException(status_code=400, detail=str(exc)) from exc
-
-
-@router.post(
     "/run",
     response_model=ScheduleRequestAcceptedDTO,
-    summary="Bắt đầu tạo lịch từ setup_id",
+    summary="Bắt đầu tạo lịch trực",
 )
-def run_schedule(body: ScheduleRunRequestDTO) -> ScheduleRequestAcceptedDTO:
-    """Đưa job vào hàng đợi tối ưu NSGA-II theo cấu hình đã lưu."""
+def run_schedule(payload: ScheduleRunRequestDTO) -> ScheduleRequestAcceptedDTO:
+    """Đưa job vào hàng đợi tối ưu NSGA-II với payload nghiệp vụ."""
     try:
-        return job_manager.start_from_setup(body.setup_id)
-    except KeyError as exc:
-        raise HTTPException(status_code=404, detail=str(exc)) from exc
+        return job_manager.submit(payload)
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
 

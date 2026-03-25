@@ -59,6 +59,38 @@ class ScheduleGenerationRequestDTO(BaseModel):
         return self
 
 
+class ScheduleRunRequestDTO(BaseModel):
+    """Payload API chạy tạo lịch; tham số optimizer lấy từ cấu hình server."""
+
+    start_date: date
+    num_days: int = Field(default=7, ge=1, le=31)
+    max_weekly_hours_per_doctor: int = Field(default=48, ge=24, le=96)
+    max_days_off_per_doctor: int = Field(default=5, ge=0, le=14)
+    rooms_per_shift: int = Field(default=1, ge=1, le=10, description="Số phòng khám hoạt động mỗi ca")
+    doctors_per_room: int = Field(default=5, ge=1, le=15, description="Số bác sĩ yêu cầu mỗi phòng")
+    shifts_per_day: int = Field(default=2, ge=2, le=2)
+    doctors: List[DoctorProfileDTO] = Field(min_length=12)
+
+    @field_validator("doctors")
+    @classmethod
+    def validate_unique_doctor_id(cls, value: List[DoctorProfileDTO]) -> List[DoctorProfileDTO]:
+        ids = [d.id for d in value]
+        if len(ids) != len(set(ids)):
+            raise ValueError("Danh sách bác sĩ có id trùng")
+        return value
+
+    @model_validator(mode="after")
+    def validate_doctor_constraints(self) -> "ScheduleRunRequestDTO":
+        for doctor in self.doctors:
+            unique_days_off = set(doctor.days_off)
+            if len(unique_days_off) > self.max_days_off_per_doctor:
+                raise ValueError(
+                    f"Bác sĩ {doctor.id} vượt quá số ngày nghỉ tối đa "
+                    f"({len(unique_days_off)} > {self.max_days_off_per_doctor})"
+                )
+        return self
+
+
 class ShiftAssignmentDTO(BaseModel):
     """Kết quả phân công bác sĩ cho một phòng trong một ca trực."""
 
@@ -166,19 +198,6 @@ class ScheduleGenerationEnvelopeDTO(BaseModel):
         default=None,
         description="Chỉ số hiệu quả lần chạy thuật toán (để đánh giá độ hội tụ, thời gian)",
     )
-
-
-class ScheduleSetupAcceptedDTO(BaseModel):
-    """Phản hồi sau khi lưu thông số tạo lịch (chưa chạy tối ưu)."""
-
-    setup_id: str = Field(description="Mã cấu hình dùng khi gọi API chạy tạo lịch")
-    message: str
-
-
-class ScheduleRunRequestDTO(BaseModel):
-    """Payload bắt đầu job tạo lịch từ cấu hình đã setup."""
-
-    setup_id: str = Field(description="Mã setup từ POST /schedules/setup")
 
 
 class ScheduleSliceDTO(BaseModel):
