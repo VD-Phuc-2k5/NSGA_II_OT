@@ -4,8 +4,7 @@ import type { DoctorInput, ParetoScheduleAssignmentsDTO, ShiftDetailState } from
 
 type WeekRow = {
   shift: string;
-  room: string;
-  cells: string[][];
+  cells: Array<Array<{ room: string; doctorIds: string[] }>>;
 };
 
 type ShiftDoctorDetail = {
@@ -92,40 +91,47 @@ export function TimetableSection({
           </thead>
           <tbody>
             {weekRows.map((row) => (
-              <tr key={`${row.shift}-${row.room}`} className="border-border border-b align-top">
+              <tr key={row.shift} className="border-border border-b align-top">
                 <td className="border-border bg-amber-50 px-3 py-3 font-semibold">
                   {SHIFT_LABELS[row.shift]}
-                  <div className="text-muted mt-0.5 text-xs font-normal">{row.room}</div>
                 </td>
-                {row.cells.map((doctorIds, idx) => (
+                {row.cells.map((roomAssignments, idx) => (
                   <td
-                    key={`${row.shift}-${row.room}-${visibleWeekDates[idx] || idx}`}
+                    key={`${row.shift}-${visibleWeekDates[idx] || idx}`}
                     className="border-border min-h-30 border px-2 py-2 align-top"
                   >
                     {visibleWeekDates[idx] ? (
-                      <button
-                        type="button"
-                        onClick={() =>
-                          onSelectShift({
-                            date: visibleWeekDates[idx],
-                            shift: row.shift,
-                            room: row.room,
-                            doctorIds,
-                          })
-                        }
-                        className="border-border h-full min-h-25 w-full rounded-md border bg-white p-2 text-left transition hover:border-cyan-500 hover:bg-cyan-50"
-                      >
-                        <p className="text-xs font-semibold text-slate-700">
-                          {SHIFT_LABELS[row.shift]} {row.room} · {doctorIds.length} bác sĩ
-                        </p>
-                        <p className="mt-2 line-clamp-2 text-xs text-slate-500">
-                          {doctorIds
-                            .slice(0, 3)
-                            .map((id) => doctorLookup.get(id)?.name ?? id)
-                            .join(", ") || "—"}
-                        </p>
-                        <p className="mt-2 text-[11px] font-semibold text-cyan-700">Xem chi tiết</p>
-                      </button>
+                      roomAssignments.length > 0 ? (
+                        <div className="flex min-h-25 flex-col gap-2">
+                          {roomAssignments.map((roomItem) => (
+                            <button
+                              key={`${row.shift}-${visibleWeekDates[idx]}-${roomItem.room}`}
+                              type="button"
+                              onClick={() =>
+                                onSelectShift({
+                                  date: visibleWeekDates[idx],
+                                  shift: row.shift,
+                                  room: roomItem.room,
+                                  doctorIds: roomItem.doctorIds,
+                                })
+                              }
+                              className="border-border w-full rounded-md border bg-white p-2 text-left transition hover:border-cyan-500 hover:bg-cyan-50"
+                            >
+                              <p className="text-xs font-semibold text-slate-700">
+                                {SHIFT_LABELS[row.shift]} {roomItem.room} · {roomItem.doctorIds.length} bác sĩ
+                              </p>
+                              <p className="mt-1 line-clamp-2 text-xs text-slate-500">
+                                {roomItem.doctorIds
+                                  .slice(0, 3)
+                                  .map((id) => doctorLookup.get(id)?.name ?? id)
+                                  .join(", ") || "—"}
+                              </p>
+                            </button>
+                          ))}
+                        </div>
+                      ) : (
+                        <div className="text-xs text-slate-400">—</div>
+                      )
                     ) : null}
                   </td>
                 ))}
@@ -140,8 +146,7 @@ export function TimetableSection({
           <div className="mb-3 flex items-start justify-between gap-3">
             <div>
               <p className="text-sm font-semibold">
-                Ca trực {SHIFT_LABELS[selectedShiftDetail.shift]} — {selectedShiftDetail.room} —{" "}
-                {formatWeekdayLong(selectedShiftDetail.date)} ({selectedShiftDetail.date})
+                Ca trực {SHIFT_LABELS[selectedShiftDetail.shift]} — {formatWeekdayLong(selectedShiftDetail.date)} ({selectedShiftDetail.date})
               </p>
               <p className="text-muted text-xs">{selectedShiftDoctors.length} bác sĩ tham gia</p>
             </div>
@@ -156,7 +161,7 @@ export function TimetableSection({
           <div className="grid grid-cols-1 gap-2 md:grid-cols-2">
             {selectedShiftDoctors.map((doctor) => (
               <article
-                key={`${selectedShiftDetail.date}-${selectedShiftDetail.shift}-${selectedShiftDetail.room}-${doctor.id}`}
+                key={`${selectedShiftDetail.date}-${selectedShiftDetail.shift}-${doctor.id}`}
                 className="border-border rounded-md border p-3 text-xs"
               >
                 <div className="mb-1 flex items-center justify-between gap-3">

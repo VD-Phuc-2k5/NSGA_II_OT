@@ -1,63 +1,100 @@
-import type { ParetoScheduleAssignmentsDTO } from "@/lib/schedule/types";
+import type { DoctorInput, ParetoScheduleAssignmentsDTO } from "@/lib/schedule/types";
 import { useMemo } from "react";
 
 type Props = {
   selectedParetoSchedule: ParetoScheduleAssignmentsDTO;
+  doctors: DoctorInput[];
 };
 
-export function DoctorSummarySection({ selectedParetoSchedule }: Props) {
+const SHIFT_HOURS = 4.5;
+
+export function DoctorSummarySection({ selectedParetoSchedule, doctors }: Props) {
   const doctorRows = useMemo(() => {
-    // Extract all unique dates from assignments
     const allDates = Array.from(
       new Set(selectedParetoSchedule.assignments.map((a) => a.date))
     ).sort((a, b) => a.localeCompare(b));
+    const allDateSet = new Set(allDates);
 
-    // Build assigned dates per doctor
+    const doctorInputById = new Map(doctors.map((d) => [d.id, d]));
+
     const assignedDatesPerDoctor = new Map<string, Set<string>>();
+    const assignedShiftCountByDoctor = new Map<string, number>();
+
     for (const doctor of selectedParetoSchedule.doctor_workload_balances) {
       assignedDatesPerDoctor.set(doctor.doctor_id, new Set<string>());
+      assignedShiftCountByDoctor.set(doctor.doctor_id, 0);
     }
+
     for (const assignment of selectedParetoSchedule.assignments) {
-      for (const doctorId of assignment.doctor_ids) {
+      // Guard against accidental duplicate doctor IDs in one assignment payload.
+      const uniqueDoctorIds = new Set(assignment.doctor_ids);
+      for (const doctorId of uniqueDoctorIds) {
         const assigned = assignedDatesPerDoctor.get(doctorId);
         if (assigned) {
           assigned.add(assignment.date);
+          assignedShiftCountByDoctor.set(
+            doctorId,
+            (assignedShiftCountByDoctor.get(doctorId) ?? 0) + 1
+          );
         }
       }
     }
 
-    // Calculate days off per doctor
     return selectedParetoSchedule.doctor_workload_balances.map((workload, idx) => {
       const assignedDates = assignedDatesPerDoctor.get(workload.doctor_id) || new Set();
-      const daysOff = allDates.filter((date) => !assignedDates.has(date));
+      const doctorInput = doctorInputById.get(workload.doctor_id);
+      const registeredDaysOff = Array.from(
+        new Set((doctorInput?.days_off ?? []).filter((d) => allDateSet.has(d)))
+      ).sort((a, b) => a.localeCompare(b));
+      const registeredDayOffSet = new Set(registeredDaysOff);
+
+      const noShiftDaysOff = allDates.filter(
+        (date) => !assignedDates.has(date) && !registeredDayOffSet.has(date)
+      );
+
+      const totalWorkHours = (assignedShiftCountByDoctor.get(workload.doctor_id) ?? 0) * SHIFT_HOURS;
+      const assignedShiftCount = assignedShiftCountByDoctor.get(workload.doctor_id) ?? 0;
+      const registeredExtraDays = Array.from(
+        new Set((doctorInput?.preferred_extra_days ?? []).filter((d) => allDateSet.has(d)))
+      ).sort((a, b) => a.localeCompare(b));
+      const extraDayStatus = registeredExtraDays.map((date) => ({
+        date,
+        fulfilled: assignedDates.has(date),
+      }));
 
       return {
         stt: idx + 1,
         doctor_id: workload.doctor_id,
         doctor_name: workload.doctor_name,
-        monthly_shifts: workload.monthly_shift_count,
-        day_off_count: workload.day_off_count,
-        specific_days_off: daysOff.join(", "),
+        assigned_shift_count: assignedShiftCount,
+        registered_days_off: registeredDaysOff.join(", "),
+        no_shift_days_off: noShiftDaysOff.join(", "),
+        total_work_hours: totalWorkHours,
+        extra_day_status: extraDayStatus,
       };
     });
-  }, [selectedParetoSchedule]);
+  }, [selectedParetoSchedule, doctors]);
 
   return (
     <section className="glass stagger-in p-4 md:p-6">
       <h2 className="mb-1 text-lg font-bold">Bác sĩ - Thống kê ca trực</h2>
       <p className="text-muted mb-4 text-sm">
-        Danh sách toàn bộ bác sĩ với số ca trực hàng tháng, số ngày nghỉ, và danh sách các ngày nghỉ cụ thể trong phương án được chọn.
+        Danh sách bác sĩ theo phương án đang chọn: số ca trực, tổng giờ làm, 2 loại ngày nghỉ và trạng thái đáp ứng ngày đăng ký trực thêm.
       </p>
 
       <div className="overflow-x-auto rounded-lg border border-border bg-white">
-        <table className="w-full text-sm">
+        <table className="min-w-280 w-full text-sm">
           <thead className="border-b border-border bg-slate-50">
             <tr>
               <th className="whitespace-nowrap px-3 py-2 text-left font-semibold text-slate-700">STT</th>
               <th className="whitespace-nowrap px-3 py-2 text-left font-semibold text-slate-700">Bác sĩ</th>
-              <th className="whitespace-nowrap px-3 py-2 text-right font-semibold text-slate-700">Ca trực (tháng)</th>
-              <th className="whitespace-nowrap px-3 py-2 text-right font-semibold text-slate-700">Ngày nghỉ</th>
-              <th className="px-3 py-2 text-left font-semibold text-slate-700">Ngày nghỉ cụ thể</th>
+              <th className="whitespace-nowrap px-3 py-2 text-right font-semibold text-slate-700">Ca trực (kỳ này)</th>
+              <th className="whitespace-nowrap px-3 py-2 text-right font-semibold text-slate-700">Tổng giờ làm</th>
+              <th className="px-3 py-2 text-left font-semibold text-slate-700">Ngày đăng ký nghỉ</th>
+              <th className="px-3 py-2 text-left font-semibold text-slate-700">Ngày nghỉ do không có ca</th>
+              <th className="px-3 py-2 text-left font-semibold text-slate-700">
+                Ngày đăng ký trực thêm (đáp ứng)
+              </th>
             </tr>
           </thead>
           <tbody>
@@ -66,14 +103,37 @@ export function DoctorSummarySection({ selectedParetoSchedule }: Props) {
                 <td className="whitespace-nowrap px-3 py-2 text-slate-600">{row.stt}</td>
                 <td className="whitespace-nowrap px-3 py-2 font-medium text-slate-900">{row.doctor_name}</td>
                 <td className="whitespace-nowrap px-3 py-2 text-right font-mono font-semibold text-emerald-700">
-                  {row.monthly_shifts}
+                  {row.assigned_shift_count}
                 </td>
                 <td className="whitespace-nowrap px-3 py-2 text-right font-mono font-semibold text-amber-700">
-                  {row.day_off_count}
+                  {row.total_work_hours.toFixed(1)}h
                 </td>
                 <td className="px-3 py-2 text-slate-600">
-                  {row.specific_days_off ? (
-                    <span className="font-mono text-xs">{row.specific_days_off}</span>
+                  {row.registered_days_off ? (
+                    <span className="font-mono text-xs">{row.registered_days_off}</span>
+                  ) : (
+                    <span className="text-slate-400">—</span>
+                  )}
+                </td>
+                <td className="px-3 py-2 text-slate-600">
+                  {row.no_shift_days_off ? (
+                    <span className="font-mono text-xs">{row.no_shift_days_off}</span>
+                  ) : (
+                    <span className="text-slate-400">—</span>
+                  )}
+                </td>
+                <td className="px-3 py-2 text-slate-600">
+                  {row.extra_day_status.length > 0 ? (
+                    <div className="flex flex-col gap-1">
+                      {row.extra_day_status.map((item) => (
+                        <div key={`${row.doctor_id}-${item.date}`} className="font-mono text-xs">
+                          <span>{item.date}</span>
+                          <span className={item.fulfilled ? "ml-1 font-semibold text-emerald-700" : "ml-1 font-semibold text-rose-700"}>
+                            ({item.fulfilled ? "Đáp ứng" : "Chưa đáp ứng"})
+                          </span>
+                        </div>
+                      ))}
+                    </div>
                   ) : (
                     <span className="text-slate-400">—</span>
                   )}

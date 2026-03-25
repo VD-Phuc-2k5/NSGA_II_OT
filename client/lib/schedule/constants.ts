@@ -8,6 +8,20 @@ export const SHIFT_LABELS: Record<string, string> = {
   afternoon: "Chiều",
 };
 
+/**
+ * Sort dates from Monday (T2) to Sunday (CN)
+ * Monday=1, Tuesday=2, ..., Sunday=0 → 7
+ */
+export function sortDatesByWeekday(dates: string[]): string[] {
+  return [...dates].sort((a, b) => {
+    const dateA = new Date(a);
+    const dateB = new Date(b);
+    const dayA = dateA.getDay() || 7; // 0 (Sun) => 7
+    const dayB = dateB.getDay() || 7;
+    return dayA - dayB;
+  });
+}
+
 const JOB_STATUS_VI: Record<string, string> = {
   queued: "Đang chờ",
   running: "Đang chạy",

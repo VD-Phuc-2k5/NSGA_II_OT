@@ -44,12 +44,6 @@ export function ScheduleControlSection({
         <h1 className="text-2xl font-extrabold leading-tight md:text-4xl">
           Lịch trực ngoại trú theo tháng
         </h1>
-        <p className="text-muted max-w-3xl text-sm md:text-base">
-          Gửi một yêu cầu duy nhất để chạy tối ưu sinh lịch.
-          Ngày bắt đầu mặc định là <strong>ngày 1 tháng sau</strong>; kỳ lập lịch luôn là{" "}
-          <strong>phần còn lại của tháng dương lịch</strong> từ ngày đó đến cuối tháng.
-          Khi hoàn tất, ứng dụng tải <strong>lịch phân công</strong> và <strong>chỉ số công bằng</strong>.
-        </p>
       </div>
 
       <div className="grid grid-cols-1 gap-3 md:grid-cols-4">

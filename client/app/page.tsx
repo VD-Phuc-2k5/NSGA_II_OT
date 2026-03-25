@@ -6,8 +6,6 @@ import { ScheduleControlSection } from "@/components/schedule/ScheduleControlSec
 import { RunMetricsSection } from "@/components/schedule/RunMetricsSection";
 import { ParetoOptionsSection } from "@/components/schedule/ParetoOptionsSection";
 import { DoctorSummarySection } from "@/components/schedule/DoctorSummarySection";
-import { ShiftAverageSection } from "@/components/schedule/ShiftAverageSection";
-import { TotalsSummarySection } from "@/components/schedule/TotalsSummarySection";
 import { TimetableSection } from "@/components/schedule/TimetableSection";
 import { ErrorBanner } from "@/components/schedule/ErrorBanner";
 import { SHIFT_ORDER } from "@/lib/schedule/constants";
@@ -37,7 +35,7 @@ export default function Home() {
   const [startDate, setStartDate] = useState(() =>
     toLocalDateStr(firstDayOfNextMonth())
   );
-  const [numDoctorsInput, setNumDoctorsInput] = useState("200");
+  const [numDoctorsInput, setNumDoctorsInput] = useState("20");
   const [roomsPerShiftInput, setRoomsPerShiftInput] = useState("2");
   const [doctorsPerRoomInput, setDoctorsPerRoomInput] = useState("6");
   const [maxWeeklyHoursInput, setMaxWeeklyHoursInput] = useState("48");
@@ -98,39 +96,52 @@ export default function Home() {
     );
   }, [metricsData, effectiveOptionId, scheduleData?.selected_option_id]);
 
+  function parseDateLocal(dateStr: string): Date {
+    return new Date(`${dateStr}T00:00:00`);
+  }
+
+  function toDateStrLocal(date: Date): string {
+    const y = date.getFullYear();
+    const m = String(date.getMonth() + 1).padStart(2, "0");
+    const d = String(date.getDate()).padStart(2, "0");
+    return `${y}-${m}-${d}`;
+  }
+
+  function mondayOf(dateStr: string): string {
+    const date = parseDateLocal(dateStr);
+    const day = date.getDay() || 7; // Sun -> 7
+    date.setDate(date.getDate() - (day - 1)); // move back to Monday
+    return toDateStrLocal(date);
+  }
+
   const timetableData = useMemo(() => {
     if (!selectedParetoSchedule) {
       return {
         dates: [] as string[],
-        rooms: [] as string[],
-        rows: [] as Array<{ shift: string; room: string; cells: string[][] }>
+        rows: [] as Array<{
+          shift: string;
+          cells: Array<Array<{ room: string; doctorIds: string[] }>>;
+        }>
       };
     }
-    const dateSet = new Set<string>();
-    const roomSet = new Set<string>();
-    for (const assignment of selectedParetoSchedule.assignments) {
-      dateSet.add(assignment.date);
-      roomSet.add(assignment.room);
-    }
-    const dates = Array.from(dateSet).sort((a, b) => a.localeCompare(b));
-    const rooms = Array.from(roomSet).sort();
+    const dates = Array.from(
+      new Set(selectedParetoSchedule.assignments.map((assignment) => assignment.date))
+    ).sort((a, b) => a.localeCompare(b));
 
-    const assignmentMap = new Map<string, string[]>();
-    for (const assignment of selectedParetoSchedule.assignments) {
-      assignmentMap.set(
-        `${assignment.date}-${assignment.shift}-${assignment.room}`,
-        assignment.doctor_ids
-      );
-    }
-
-    const rows = SHIFT_ORDER.flatMap((shift) =>
-      rooms.map((room) => ({
-        shift,
-        room,
-        cells: dates.map((date) => assignmentMap.get(`${date}-${shift}-${room}`) ?? [])
-      }))
-    );
-    return { dates, rooms, rows };
+    // Group all rooms per shift-date into one cell while preserving room details.
+    const rows = SHIFT_ORDER.map((shift) => ({
+      shift,
+      cells: dates.map((date) => {
+        return selectedParetoSchedule.assignments
+          .filter((assignment) => assignment.date === date && assignment.shift === shift)
+          .sort((a, b) => a.room.localeCompare(b.room))
+          .map((assignment) => ({
+            room: assignment.room,
+            doctorIds: assignment.doctor_ids,
+          }));
+      })
+    }));
+    return { dates, rows };
   }, [selectedParetoSchedule]);
 
   const doctorLookup = useMemo(
@@ -138,34 +149,56 @@ export default function Home() {
     [doctors]
   );
 
+  const weekStartDates = useMemo(() => {
+    if (timetableData.dates.length === 0) return [] as string[];
+
+    const first = timetableData.dates[0];
+    const last = timetableData.dates[timetableData.dates.length - 1];
+    const starts: string[] = [];
+
+    let cursor = parseDateLocal(mondayOf(first));
+    const endDate = parseDateLocal(last);
+
+    while (cursor <= endDate) {
+      starts.push(toDateStrLocal(cursor));
+      cursor.setDate(cursor.getDate() + 7);
+    }
+
+    return starts;
+  }, [timetableData.dates]);
+
   const totalWeeks = useMemo(
-    () =>
-      timetableData.dates.length === 0
-        ? 0
-        : Math.ceil(timetableData.dates.length / 7),
-    [timetableData.dates.length]
+    () => weekStartDates.length,
+    [weekStartDates.length]
   );
 
-  const weekDates = useMemo(() => {
-    const start = weekIndex * 7;
-    return timetableData.dates.slice(start, start + 7);
-  }, [timetableData.dates, weekIndex]);
-
   const visibleWeekDates = useMemo(() => {
-    const placeholders = Math.max(0, 7 - weekDates.length);
-    return [...weekDates, ...Array.from({ length: placeholders }, () => "")];
-  }, [weekDates]);
+    const weekStart = weekStartDates[weekIndex];
+    if (!weekStart) return Array.from({ length: 7 }, () => "");
+
+    const availableDates = new Set(timetableData.dates);
+    const startDate = parseDateLocal(weekStart);
+
+    return Array.from({ length: 7 }, (_, offset) => {
+      const current = new Date(startDate);
+      current.setDate(startDate.getDate() + offset);
+      const dateStr = toDateStrLocal(current);
+      return availableDates.has(dateStr) ? dateStr : "";
+    });
+  }, [weekStartDates, weekIndex, timetableData.dates]);
 
   const weekRows = useMemo(() => {
     if (visibleWeekDates.length === 0) {
-      return [] as Array<{ shift: string; room: string; cells: string[][] }>;
+      return [] as Array<{
+        shift: string;
+        cells: Array<Array<{ room: string; doctorIds: string[] }>>;
+      }>;
     }
     const dateIndexMap = new Map(
       timetableData.dates.map((date, index) => [date, index])
     );
     return timetableData.rows.map((row) => ({
       shift: row.shift,
-      room: row.room,
       cells: visibleWeekDates.map((date) => {
         if (!date) return [];
         const globalIndex = dateIndexMap.get(date);
@@ -408,13 +441,7 @@ export default function Home() {
       ) : null}
 
       {selectedParetoSchedule ? (
-        <DoctorSummarySection selectedParetoSchedule={selectedParetoSchedule} />
-      ) : null}
-
-      {shiftAverageStats ? <ShiftAverageSection stats={shiftAverageStats} /> : null}
-
-      {shiftAverageStats && totalsStats ? (
-        <TotalsSummarySection shiftAverageStats={shiftAverageStats} totalsStats={totalsStats} />
+        <DoctorSummarySection selectedParetoSchedule={selectedParetoSchedule} doctors={doctors} />
       ) : null}
 
       {selectedParetoSchedule ? (
