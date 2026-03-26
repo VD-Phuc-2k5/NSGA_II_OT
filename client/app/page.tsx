@@ -337,7 +337,7 @@ export default function Home() {
           pollOnce().catch((err: unknown) => {
             setError(err instanceof Error ? err.message : "Lỗi đồng bộ tiến độ");
           });
-        }, 1000);
+        }, 30000);
       }
     };
     await pollOnce();
