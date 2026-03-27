@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { JobProgressSection } from "@/components/schedule/JobProgressSection";
 import { ScheduleControlSection } from "@/components/schedule/ScheduleControlSection";
 import { RunMetricsSection } from "@/components/schedule/RunMetricsSection";
@@ -35,7 +35,7 @@ export default function Home() {
   const [startDate, setStartDate] = useState(() =>
     toLocalDateStr(firstDayOfNextMonth())
   );
-  const [numDoctorsInput, setNumDoctorsInput] = useState("20");
+  const [numDoctorsInput, setNumDoctorsInput] = useState("24");
   const [roomsPerShiftInput, setRoomsPerShiftInput] = useState("2");
   const [doctorsPerRoomInput, setDoctorsPerRoomInput] = useState("6");
   const [maxWeeklyHoursInput, setMaxWeeklyHoursInput] = useState("48");
@@ -56,19 +56,20 @@ export default function Home() {
   const activePollsRef = useRef<Set<string>>(new Set());
   const pollTimersRef = useRef<Map<string, number>>(new Map());
   const pollInFlightRef = useRef<Set<string>>(new Set());
+  const pollJobProgressRef = useRef<(requestId: string) => Promise<void>>(async () => {});
 
   const latestJob = jobs[0] ?? null;
 
   
   const STORAGE_KEY = "schedule_state";
   
-  function saveState() {
+  const saveState = useCallback(() => {
     if (typeof window === "undefined") return;
     const state = { jobs, scheduleData, metricsData, selectedOptionId };
     localStorage.setItem(STORAGE_KEY, JSON.stringify(state));
-  }
+  }, [jobs, scheduleData, metricsData, selectedOptionId]);
 
-  function loadState() {
+  const loadState = useCallback(() => {
     if (typeof window === "undefined") return null;
     try {
       const stored = localStorage.getItem(STORAGE_KEY);
@@ -76,14 +77,14 @@ export default function Home() {
     } catch {
       return null;
     }
-  }
+  }, []);
 
   function clearState() {
     if (typeof window === "undefined") return;
     localStorage.removeItem(STORAGE_KEY);
   }
 
-  function stopPollingJob(requestId: string): void {
+  const stopPollingJob = useCallback((requestId: string): void => {
     activePollsRef.current.delete(requestId);
     pollInFlightRef.current.delete(requestId);
     const timerId = pollTimersRef.current.get(requestId);
@@ -91,7 +92,7 @@ export default function Home() {
       window.clearInterval(timerId);
       pollTimersRef.current.delete(requestId);
     }
-  }
+  }, []);
 
   function stopAllPolling(): void {
     pollTimersRef.current.forEach((timerId) => {
@@ -118,19 +119,38 @@ export default function Home() {
       if (runningJobs.length > 0) {
         console.log("[localStorage] Found running jobs, resuming polling:", runningJobs);
         runningJobs.forEach((job: RequestJob) => {
-          void pollJobProgress(job.request_id).catch((err: unknown) => {
+          void pollJobProgressRef.current(job.request_id).catch((err: unknown) => {
             console.error("[localStorage] Error resuming polling:", err);
             setError(err instanceof Error ? err.message : "Lỗi theo dõi tiến độ");
           });
         });
       }
-    }
-  }, []);
 
-  
+      // Nếu có job completed nhưng scheduleData null, fetch lại từ API
+      const completedJobsWithoutData = (stored.jobs || []).filter(
+        (job: RequestJob) => job.status === "completed" && !stored.scheduleData
+      );
+      if (completedJobsWithoutData.length > 0) {
+        console.log("[localStorage] Found completed jobs without data, fetching:", completedJobsWithoutData);
+        const latestCompletedJob = completedJobsWithoutData[0];
+        void fetchScheduleAndMetrics(latestCompletedJob.request_id)
+          .then(({ schedule, metrics }) => {
+            console.log("[localStorage] ✓ Fetched schedule and metrics for completed job");
+            setScheduleData(schedule);
+            setMetricsData(metrics);
+            setSelectedOptionId(schedule.selected_option_id);
+          })
+          .catch((err: unknown) => {
+            console.error("[localStorage] ✗ Failed to fetch schedule and metrics:", err);
+            setError(err instanceof Error ? err.message : "Lỗi tải kết quả");
+          });
+      }
+    }
+  }, [loadState]);
+
   useEffect(() => {
     saveState();
-  }, [jobs, scheduleData, metricsData, selectedOptionId]);
+  }, [jobs, scheduleData, metricsData, selectedOptionId, saveState]);
 
   useEffect(() => {
     return () => {
@@ -139,8 +159,8 @@ export default function Home() {
   }, []);
   
   const monthSpanDays = useMemo(
-    () => numDaysThroughEndOfCalendarMonth(startDate),
-    [startDate]
+    () => 7,
+    []
   );
 
   const totalProgress = useMemo(() => {
@@ -160,24 +180,24 @@ export default function Home() {
     selectedOptionId ?? scheduleData?.selected_option_id ?? null;
 
   const selectedParetoSchedule = useMemo(() => {
-    if (!scheduleData?.pareto_options.length) return null;
+    if (!scheduleData?.pareto_options.length) {
+      console.log("[selectedParetoSchedule] No pareto_options, returning null. scheduleData:", scheduleData);
+      return null;
+    }
     const id = effectiveOptionId ?? scheduleData.selected_option_id;
-    return (
+    const selected = (
       scheduleData.pareto_options.find((o) => o.option_id === id) ??
       scheduleData.pareto_options[0]
     );
+    console.log("[selectedParetoSchedule] Selected schedule:", {
+      effectiveOptionId,
+      selected_option_id: scheduleData.selected_option_id,
+      final_option_id: selected?.option_id,
+      pareto_count: scheduleData.pareto_options.length,
+    });
+    return selected;
   }, [scheduleData, effectiveOptionId]);
-
-  const selectedParetoMetrics = useMemo(() => {
-    if (!metricsData?.pareto_options.length) return null;
-    const id = effectiveOptionId ?? scheduleData?.selected_option_id;
-    return (
-      metricsData.pareto_options.find((o) => o.option_id === id) ??
-      metricsData.pareto_options[0]
-    );
-  }, [metricsData, effectiveOptionId, scheduleData?.selected_option_id]);
-
-  function parseDateLocal(dateStr: string): Date {
+    function parseDateLocal(dateStr: string): Date {
     return new Date(`${dateStr}T00:00:00`);
   }
 
@@ -188,12 +208,12 @@ export default function Home() {
     return `${y}-${m}-${d}`;
   }
 
-  function mondayOf(dateStr: string): string {
+  const mondayOf = useCallback((dateStr: string): string => {
     const date = parseDateLocal(dateStr);
     const day = date.getDay() || 7; 
     date.setDate(date.getDate() - (day - 1)); 
     return toDateStrLocal(date);
-  }
+  }, []);
 
   const timetableData = useMemo(() => {
     if (!selectedParetoSchedule) {
@@ -237,7 +257,7 @@ export default function Home() {
     const last = timetableData.dates[timetableData.dates.length - 1];
     const starts: string[] = [];
 
-    let cursor = parseDateLocal(mondayOf(first));
+    const cursor = parseDateLocal(mondayOf(first));
     const endDate = parseDateLocal(last);
 
     while (cursor <= endDate) {
@@ -246,7 +266,7 @@ export default function Home() {
     }
 
     return starts;
-  }, [timetableData.dates]);
+  }, [timetableData.dates, mondayOf]);
 
   const totalWeeks = useMemo(
     () => weekStartDates.length,
@@ -288,66 +308,6 @@ export default function Home() {
     }));
   }, [timetableData.dates, timetableData.rows, visibleWeekDates]);
 
-  /**
-   * Trung bình lý thuyết: tổng ô phân công trong kỳ / số bác sĩ (mức đều nếu chia đều).
-   * Trung bình thực tế: trung bình số ca đã gán trên từng bác sĩ (đếm từ lịch).
-   * Khi mọi ô đều đủ người và chỉ gán bác sĩ trong danh sách, hai giá trị khớp nhau.
-   */
-  const shiftAverageStats = useMemo(() => {
-    if (!scheduleData?.selected || !selectedParetoSchedule) return null;
-    const { num_days, shifts_per_day, rooms_per_shift, doctors_per_room } =
-      scheduleData.selected;
-    const n = doctors.length;
-    if (n === 0) return null;
-
-    
-    const totalDutySlots = num_days * shifts_per_day * rooms_per_shift;
-    
-    const totalShiftSlots = totalDutySlots * doctors_per_room;
-    const theoreticalAvg = totalShiftSlots / n;
-
-    const counts = new Map<string, number>();
-    for (const d of doctors) {
-      counts.set(d.id, 0);
-    }
-    const dutySlotSet = new Set<string>();
-    for (const a of selectedParetoSchedule.assignments) {
-      dutySlotSet.add(`${a.date}-${a.shift}-${a.room}`);
-      for (const id of a.doctor_ids) {
-        if (counts.has(id)) {
-          counts.set(id, (counts.get(id) ?? 0) + 1);
-        }
-      }
-    }
-    const perDoctor = doctors.map((d) => counts.get(d.id) ?? 0);
-    const actualSum = perDoctor.reduce((s, v) => s + v, 0);
-    const actualAvg = actualSum / n;
-    const minCa = Math.min(...perDoctor);
-    const maxCa = Math.max(...perDoctor);
-    const actualDutySlots = dutySlotSet.size;
-
-    return {
-      theoreticalAvg,
-      actualAvg,
-      totalDutySlots,
-      actualDutySlots,
-      totalShiftSlots,
-      actualSum,
-      n,
-      minCa,
-      maxCa
-    };
-  }, [scheduleData, selectedParetoSchedule, doctors]);
-
-  const totalsStats = useMemo(() => {
-    const totalDaysOff = doctors.reduce((sum, d) => {
-      
-      return sum + new Set(d.days_off ?? []).size;
-    }, 0);
-
-    return { totalDaysOff };
-  }, [doctors]);
-
   const selectedShiftDoctors = useMemo(() => {
     if (!selectedShiftDetail) return [] as Array<DoctorInput & { role: string }>;
     return selectedShiftDetail.doctorIds.map((doctorId) => {
@@ -379,7 +339,8 @@ export default function Home() {
     setSelectedShiftDetail(null);
   }, [selectedOptionId, weekIndex]);
 
-  function updateJobProgress(progress: ScheduleJobStatusDTO): void {
+  const updateJobProgress = useCallback((progress: ScheduleJobStatusDTO): void => {
+    console.log("[updateJobProgress] Status:", progress.status, "Request ID:", progress.request_id);
     setJobs((prev) =>
       prev.map((job) =>
         job.request_id === progress.request_id
@@ -394,22 +355,32 @@ export default function Home() {
       )
     );
     if (progress.status === "completed") {
+      console.log("[updateJobProgress] Job completed! Fetching schedule and metrics for:", progress.request_id);
       void fetchScheduleAndMetrics(progress.request_id)
         .then(({ schedule, metrics }) => {
+          console.log("[updateJobProgress] ✓ Data received:", {
+            request_id: schedule.request_id,
+            selected_option_id: schedule.selected_option_id,
+            pareto_options_count: schedule.pareto_options.length,
+            selected_schedule: schedule.selected,
+            pareto_first: schedule.pareto_options[0],
+            metrics_pareto_count: metrics.pareto_options.length,
+          });
           setScheduleData(schedule);
           setMetricsData(metrics);
           setSelectedOptionId(schedule.selected_option_id);
         })
         .catch((err: unknown) => {
+          console.error("[updateJobProgress] ✗ Failed to fetch schedule and metrics:", err);
           setError(err instanceof Error ? err.message : "Lỗi tải kết quả");
         });
     }
     if (progress.status === "failed") {
       setError(progress.error ?? "Yêu cầu tối ưu thất bại");
     }
-  }
+  }, [setScheduleData, setMetricsData, setSelectedOptionId, setError]);
 
-  async function pollJobProgress(requestId: string): Promise<void> {
+  const pollJobProgress = useCallback(async (requestId: string): Promise<void> => {
     if (pollTimersRef.current.has(requestId)) {
       return;
     }
@@ -428,15 +399,15 @@ export default function Home() {
       pollInFlightRef.current.add(requestId);
       try {
         const progress = await fetchScheduleProgress(requestId);
-        console.log("[pollJobProgress] Status:", progress.status, "Progress:", progress.progress_percent);
+        console.log("[pollJobProgress] Polling:", { requestId, status: progress.status, progress: progress.progress_percent });
         updateJobProgress(progress);
 
         if (progress.status === "completed" || progress.status === "failed") {
-          console.log("[pollJobProgress] Job đã kết thúc, dừng polling");
+          console.log("[pollJobProgress] ✓ Job finished (status=" + progress.status + "), stopping polling");
           stopPollingJob(requestId);
         }
       } catch (err: unknown) {
-        console.error("[pollJobProgress] Lỗi poll, sẽ thử lại:", err);
+        console.error("[pollJobProgress] ✗ Polling error, will retry:", err);
         setError(err instanceof Error ? err.message : "Lỗi đồng bộ tiến độ");
       } finally {
         pollInFlightRef.current.delete(requestId);
@@ -448,7 +419,9 @@ export default function Home() {
       void tick();
     }, 5000);
     pollTimersRef.current.set(requestId, timerId);
-  }
+  }, [updateJobProgress, stopPollingJob]);
+
+  pollJobProgressRef.current = pollJobProgress;
 
   async function handleRunSchedule(): Promise<void> {
     setError(null);
@@ -505,7 +478,6 @@ export default function Home() {
   }
 
   const runMetrics = metricsData?.algorithm_run_metrics ?? null;
-  const m = selectedParetoMetrics?.metrics;
 
   return (
     <main className="mx-auto flex w-full max-w-7xl flex-col gap-6 px-4 py-8 md:px-8">

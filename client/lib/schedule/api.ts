@@ -31,20 +31,29 @@ export async function parseApiError(raw: string, fallback: string): Promise<stri
 export async function fetchScheduleAndMetrics(
   requestId: string
 ): Promise<{ schedule: ScheduleJobScheduleResponseDTO; metrics: ScheduleJobMetricsResponseDTO }> {
+  console.log("[fetchScheduleAndMetrics] Calling proxy endpoints for:", requestId);
+  
   const [schRes, metRes] = await Promise.all([
-    fetch(`${API_BASE_URL}/api/v1/schedules/jobs/${requestId}/schedule`),
-    fetch(`${API_BASE_URL}/api/v1/schedules/jobs/${requestId}/metrics`),
+    fetch(`/api/schedules/jobs/${requestId}?type=schedule`),
+    fetch(`/api/schedules/jobs/${requestId}?type=metrics`),
   ]);
 
   if (!schRes.ok) {
-    throw new Error(await parseApiError(await schRes.text(), "Không tải được lịch trực"));
+    const errText = await schRes.text();
+    const errMsg = await parseApiError(errText, "Không tải được lịch trực");
+    console.error("[fetchScheduleAndMetrics] Schedule fetch failed:", { status: schRes.status, error: errMsg });
+    throw new Error(errMsg);
   }
   if (!metRes.ok) {
-    throw new Error(await parseApiError(await metRes.text(), "Không tải được chỉ số"));
+    const errText = await metRes.text();
+    const errMsg = await parseApiError(errText, "Không tải được chỉ số");
+    console.error("[fetchScheduleAndMetrics] Metrics fetch failed:", { status: metRes.status, error: errMsg });
+    throw new Error(errMsg);
   }
 
   const schedule = (await schRes.json()) as ScheduleJobScheduleResponseDTO;
   const metrics = (await metRes.json()) as ScheduleJobMetricsResponseDTO;
+  console.log("[fetchScheduleAndMetrics] ✓ Both proxy endpoints called and succeeded");
   return { schedule, metrics };
 }
 
