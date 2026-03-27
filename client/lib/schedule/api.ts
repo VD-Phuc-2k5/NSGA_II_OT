@@ -64,7 +64,11 @@ export async function postRunSchedule(payload: unknown): Promise<ScheduleRequest
 }
 
 export async function fetchScheduleProgress(requestId: string): Promise<ScheduleJobStatusDTO> {
-  const response = await fetch(`${API_BASE_URL}/api/v1/schedules/progress/${requestId}`);
+  const base = API_BASE_URL.replace(/\/+$/, "");
+  const endpoint = `${base}/api/v1/schedules/progress/${requestId}`;
+  const response = await fetch(`${endpoint}?_t=${Date.now()}`, {
+    cache: "no-store",
+  });
   if (!response.ok) throw new Error("Không thể đồng bộ tiến độ tác vụ");
   return (await response.json()) as ScheduleJobStatusDTO;
 }

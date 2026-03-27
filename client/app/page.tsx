@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { JobProgressSection } from "@/components/schedule/JobProgressSection";
 import { ScheduleControlSection } from "@/components/schedule/ScheduleControlSection";
 import { RunMetricsSection } from "@/components/schedule/RunMetricsSection";
@@ -53,10 +53,91 @@ export default function Home() {
   const [selectedOptionId, setSelectedOptionId] = useState<string | null>(null);
   const [weekIndex, setWeekIndex] = useState(0);
   const [selectedShiftDetail, setSelectedShiftDetail] = useState<ShiftDetailState | null>(null);
+  const activePollsRef = useRef<Set<string>>(new Set());
+  const pollTimersRef = useRef<Map<string, number>>(new Map());
+  const pollInFlightRef = useRef<Set<string>>(new Set());
 
   const latestJob = jobs[0] ?? null;
 
-  /** Luôn lập đủ phần còn lại của tháng dương lịch từ ngày bắt đầu. */
+  
+  const STORAGE_KEY = "schedule_state";
+  
+  function saveState() {
+    if (typeof window === "undefined") return;
+    const state = { jobs, scheduleData, metricsData, selectedOptionId };
+    localStorage.setItem(STORAGE_KEY, JSON.stringify(state));
+  }
+
+  function loadState() {
+    if (typeof window === "undefined") return null;
+    try {
+      const stored = localStorage.getItem(STORAGE_KEY);
+      return stored ? JSON.parse(stored) : null;
+    } catch {
+      return null;
+    }
+  }
+
+  function clearState() {
+    if (typeof window === "undefined") return;
+    localStorage.removeItem(STORAGE_KEY);
+  }
+
+  function stopPollingJob(requestId: string): void {
+    activePollsRef.current.delete(requestId);
+    pollInFlightRef.current.delete(requestId);
+    const timerId = pollTimersRef.current.get(requestId);
+    if (timerId !== undefined) {
+      window.clearInterval(timerId);
+      pollTimersRef.current.delete(requestId);
+    }
+  }
+
+  function stopAllPolling(): void {
+    pollTimersRef.current.forEach((timerId) => {
+      window.clearInterval(timerId);
+    });
+    pollTimersRef.current.clear();
+    activePollsRef.current.clear();
+    pollInFlightRef.current.clear();
+  }
+
+  
+  useEffect(() => {
+    const stored = loadState();
+    if (stored) {
+      setJobs(stored.jobs || []);
+      setScheduleData(stored.scheduleData || null);
+      setMetricsData(stored.metricsData || null);
+      setSelectedOptionId(stored.selectedOptionId || null);
+      console.log("[localStorage] Loaded state:", stored);
+
+      const runningJobs = (stored.jobs || []).filter(
+        (job: RequestJob) => job.status === "queued" || job.status === "running"
+      );
+      if (runningJobs.length > 0) {
+        console.log("[localStorage] Found running jobs, resuming polling:", runningJobs);
+        runningJobs.forEach((job: RequestJob) => {
+          void pollJobProgress(job.request_id).catch((err: unknown) => {
+            console.error("[localStorage] Error resuming polling:", err);
+            setError(err instanceof Error ? err.message : "Lỗi theo dõi tiến độ");
+          });
+        });
+      }
+    }
+  }, []);
+
+  
+  useEffect(() => {
+    saveState();
+  }, [jobs, scheduleData, metricsData, selectedOptionId]);
+
+  useEffect(() => {
+    return () => {
+      stopAllPolling();
+    };
+  }, []);
+  
   const monthSpanDays = useMemo(
     () => numDaysThroughEndOfCalendarMonth(startDate),
     [startDate]
@@ -109,8 +190,8 @@ export default function Home() {
 
   function mondayOf(dateStr: string): string {
     const date = parseDateLocal(dateStr);
-    const day = date.getDay() || 7; // Sun -> 7
-    date.setDate(date.getDate() - (day - 1)); // move back to Monday
+    const day = date.getDay() || 7; 
+    date.setDate(date.getDate() - (day - 1)); 
     return toDateStrLocal(date);
   }
 
@@ -128,7 +209,7 @@ export default function Home() {
       new Set(selectedParetoSchedule.assignments.map((assignment) => assignment.date))
     ).sort((a, b) => a.localeCompare(b));
 
-    // Group all rooms per shift-date into one cell while preserving room details.
+    
     const rows = SHIFT_ORDER.map((shift) => ({
       shift,
       cells: dates.map((date) => {
@@ -219,9 +300,9 @@ export default function Home() {
     const n = doctors.length;
     if (n === 0) return null;
 
-    // "Ca trực" theo bảng thời khóa biểu = (ngày × ca × phòng)
+    
     const totalDutySlots = num_days * shifts_per_day * rooms_per_shift;
-    // "Ca trực" theo mức bác sĩ = (ngày × ca × phòng × bác sĩ/phòng)
+    
     const totalShiftSlots = totalDutySlots * doctors_per_room;
     const theoreticalAvg = totalShiftSlots / n;
 
@@ -260,7 +341,7 @@ export default function Home() {
 
   const totalsStats = useMemo(() => {
     const totalDaysOff = doctors.reduce((sum, d) => {
-      // Tránh trường hợp mảng `days_off` có trùng (dù generateDoctors đã unique theo Set).
+      
       return sum + new Set(d.days_off ?? []).size;
     }, 0);
 
@@ -329,18 +410,44 @@ export default function Home() {
   }
 
   async function pollJobProgress(requestId: string): Promise<void> {
-    const pollOnce = async () => {
-      const progress = await fetchScheduleProgress(requestId);
-      updateJobProgress(progress);
-      if (progress.status === "queued" || progress.status === "running") {
-        setTimeout(() => {
-          pollOnce().catch((err: unknown) => {
-            setError(err instanceof Error ? err.message : "Lỗi đồng bộ tiến độ");
-          });
-        }, 30000);
+    if (pollTimersRef.current.has(requestId)) {
+      return;
+    }
+
+    activePollsRef.current.add(requestId);
+
+    const tick = async (): Promise<void> => {
+      if (!activePollsRef.current.has(requestId)) {
+        return;
+      }
+
+      if (pollInFlightRef.current.has(requestId)) {
+        return;
+      }
+
+      pollInFlightRef.current.add(requestId);
+      try {
+        const progress = await fetchScheduleProgress(requestId);
+        console.log("[pollJobProgress] Status:", progress.status, "Progress:", progress.progress_percent);
+        updateJobProgress(progress);
+
+        if (progress.status === "completed" || progress.status === "failed") {
+          console.log("[pollJobProgress] Job đã kết thúc, dừng polling");
+          stopPollingJob(requestId);
+        }
+      } catch (err: unknown) {
+        console.error("[pollJobProgress] Lỗi poll, sẽ thử lại:", err);
+        setError(err instanceof Error ? err.message : "Lỗi đồng bộ tiến độ");
+      } finally {
+        pollInFlightRef.current.delete(requestId);
       }
     };
-    await pollOnce();
+
+    void tick();
+    const timerId = window.setInterval(() => {
+      void tick();
+    }, 5000);
+    pollTimersRef.current.set(requestId, timerId);
   }
 
   async function handleRunSchedule(): Promise<void> {
@@ -428,6 +535,25 @@ export default function Home() {
       />
 
       <JobProgressSection totalProgress={totalProgress} jobs={jobs} />
+
+      {(jobs.length > 0 || scheduleData) && (
+        <div className="flex gap-2">
+          <button
+            onClick={() => {
+              stopAllPolling();
+              clearState();
+              setJobs([]);
+              setScheduleData(null);
+              setMetricsData(null);
+              setSelectedOptionId(null);
+              window.location.reload();
+            }}
+            className="rounded bg-gray-300 px-3 py-1 text-sm hover:bg-gray-400"
+          >
+            Clear Cache
+          </button>
+        </div>
+      )}
 
       {runMetrics ? <RunMetricsSection runMetrics={runMetrics} /> : null}
 
